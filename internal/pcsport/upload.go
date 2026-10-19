@@ -1,0 +1,222 @@
+// Package pcsport holds the upload logic of BaiduPCS-Go
+// (https://github.com/qjfoidnh/BaiduPCS-Go, Apache License 2.0), which
+// lives in its internal packages and cannot be imported: rapid upload by
+// checksums, then the file in parts, then the parts joined. It is adapted
+// from internal/pcsfunctions/pcsupload to run without the CLI's global
+// configuration and to report its progress.
+package pcsport
+
+import (
+	"context"
+	"crypto/md5"
+	"crypto/tls"
+	"encoding/base64"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"path"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/qjfoidnh/BaiduPCS-Go/baidupcs"
+	"github.com/qjfoidnh/BaiduPCS-Go/baidupcs/pcserror"
+	"github.com/qjfoidnh/BaiduPCS-Go/pcsutil/checksum"
+	"github.com/qjfoidnh/BaiduPCS-Go/requester"
+	"github.com/qjfoidnh/BaiduPCS-Go/requester/multipartreader"
+	"github.com/qjfoidnh/BaiduPCS-Go/requester/rio"
+	"github.com/qjfoidnh/BaiduPCS-Go/requester/uploader"
+)
+
+// Progress reports bytes sent of the total.
+type Progress func(done, total int64)
+
+// ErrExists is what Upload returns when the netdisk already holds the same
+// file there.
+var ErrExists = errors.New("网盘中已有同样的文件")
+
+const sliceContent = 4 << 10
+
+// Upload sends a local file to savePath of the netdisk, by its checksums
+// when the netdisk already has its content.
+func Upload(ctx context.Context, pcs *baidupcs.BaiduPCS, local, savePath string, parallel int, progress Progress) error {
+	lfc := checksum.NewLocalFileChecksum(local, int(baidupcs.SliceMD5Size))
+	if err := lfc.OpenPath(); err != nil {
+		return err
+	}
+	defer lfc.Close()
+	size := lfc.Length
+	if progress != nil {
+		progress(0, size)
+	}
+
+	// Rapid upload: the netdisk links content it already has.
+	if err := lfc.Sum(checksum.CHECKSUM_MD5 | checksum.CHECKSUM_SLICE_MD5 | checksum.CHECKSUM_CRC32); err != nil {
+		return fmt.Errorf("计算校验和失败：%w", err)
+	}
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	uk, perr := pcs.CacheUK()
+	if perr != nil {
+		return fmt.Errorf("获取用户信息失败：%w", perr)
+	}
+	md5hex := hex.EncodeToString(lfc.MD5)
+	now := time.Now().Unix()
+	offset, err := dataOffset(md5hex, uk, now, size, sliceContent)
+	if err != nil {
+		return err
+	}
+	content, length, err := lfc.GetSliceDataContent(offset, sliceContent)
+	if err != nil {
+		return err
+	}
+	b64 := strings.TrimRight(base64.StdEncoding.EncodeToString(content), "=")
+	blockSize := blockSizeFor(size)
+	if err := lfc.CalculateChunkedSum(blockSize); err != nil {
+		return fmt.Errorf("计算分块校验和失败：%w", err)
+	}
+	perr, res := pcs.RapidUpload(savePath, baidupcs.OverWritePolicy, "", md5hex, hex.EncodeToString(lfc.SliceMD5), b64,
+		strconv.FormatUint(uint64(lfc.CRC32), 10), offset, length, size, now, lfc.BlocksList)
+	if perr != nil {
+		switch perr.GetRemoteErrCode() {
+		case 114514, 1919810:
+			return ErrExists
+		case 31112:
+			return errors.New("网盘空间不足")
+		}
+		return fmt.Errorf("上传失败：%w", perr)
+	}
+	if res.ReturnType == 2 {
+		if progress != nil {
+			progress(size, size)
+		}
+		return nil
+	}
+
+	// The parts, then joined.
+	mu := uploader.NewMultiUploader(&partUpload{pcs: pcs, target: savePath, client: uploadClient(pcs)},
+		rio.NewFileReaderAtLen64(lfc.GetFile()),
+		&uploader.MultiUploaderConfig{Parallel: max(parallel, 1), BlockSize: blockSize, Policy: baidupcs.OverWritePolicy}, savePath)
+	mu.SetInstanceState(&uploader.InstanceState{Uploadid: res.UploadID})
+	var upErr error
+	mu.OnError(func(err error) { upErr = err })
+	if progress != nil {
+		mu.OnUploadStatusEvent(func(st uploader.Status, _ <-chan struct{}) {
+			progress(st.Uploaded(), st.TotalSize())
+		})
+	}
+	stop := context.AfterFunc(ctx, mu.Cancel)
+	defer stop()
+	mu.Execute()
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if upErr != nil {
+		return fmt.Errorf("上传失败：%w", upErr)
+	}
+	if progress != nil {
+		progress(size, size)
+	}
+	return nil
+}
+
+// partUpload sends parts to the PCS host of the session, whose
+// certificate is checked.
+type partUpload struct {
+	pcs    *baidupcs.BaiduPCS
+	target string
+	client *requester.HTTPClient
+}
+
+func uploadClient(pcs *baidupcs.BaiduPCS) *requester.HTTPClient {
+	c := requester.NewHTTPClient()
+	c.SetCookiejar(pcs.GetClient().Jar)
+	c.SetTimeout(200 * time.Second)
+	c.SetKeepAlive(true)
+	if tr, ok := c.Client.Transport.(*http.Transport); ok {
+		tr.TLSClientConfig = &tls.Config{}
+	}
+	return c
+}
+
+func (pu *partUpload) Precreate() (string, pcserror.Error) {
+	return pu.pcs.GetPCSAddr(), nil
+}
+
+func (pu *partUpload) TmpFile(ctx context.Context, uploadID, target string, seq int, off int64, r rio.ReaderLen64) (string, error) {
+	var hardErr *uploader.MultiError
+	sum, perr := pu.pcs.UploadTmpFile(uploadID, target, seq, off, func(u string, jar http.CookieJar) (*http.Response, error) {
+		mr := multipartreader.NewMultipartReader()
+		mr.AddFormFile("uploadedfile", "", r)
+		mr.CloseMultipart()
+		type result struct {
+			resp *http.Response
+			err  error
+		}
+		done := make(chan result, 1)
+		go func() {
+			resp, err := pu.client.Req(http.MethodPost, u, mr, nil)
+			if resp != nil {
+				switch resp.StatusCode {
+				case 400, 401, 403, 413:
+					hardErr = &uploader.MultiError{Terminated: true}
+				}
+			}
+			done <- result{resp, err}
+		}()
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case r := <-done:
+			return r.resp, r.err
+		}
+	})
+	if hardErr != nil {
+		hardErr.Err = perr
+		return sum, hardErr
+	}
+	if perr != nil {
+		return sum, perr
+	}
+	return sum, nil
+}
+
+func (pu *partUpload) CreateSuperFile(host, policy, uploadID string, size int64, sums map[int]string) error {
+	pu.pcs.SetPCSAddr(host)
+	if perr := pu.pcs.UploadCreateSuperFile(uploadID, policy, size, pu.target, sums); perr != nil {
+		return perr
+	}
+	return nil
+}
+
+func blockSizeFor(size int64) int64 {
+	switch {
+	case size >= baidupcs.MaxUploadThreshold:
+		return baidupcs.MaxUploadBlockSize
+	case size >= baidupcs.MiddleUploadThreshold:
+		return baidupcs.MiddleUploadBlockSize
+	}
+	return baidupcs.MinUploadBlockSize
+}
+
+// dataOffset is where the netdisk asks for a slice of the content to
+// prove a rapid upload has it.
+func dataOffset(contentMD5 string, uk, t, size, sub int64) (int64, error) {
+	h := md5.New()
+	io.WriteString(h, fmt.Sprintf("%d%s%d", uk, contentMD5, t))
+	mixed := hex.EncodeToString(h.Sum(nil))
+	raw, err := strconv.ParseInt(mixed[:8], 16, 64)
+	if err != nil {
+		return 0, err
+	}
+	if size-sub+1 <= 1 {
+		return 0, nil
+	}
+	return raw % (size - sub + 1), nil
+}
+
+// Dir returns the directory of a netdisk path, for making it first.
+func Dir(p string) string { return path.Dir(p) }

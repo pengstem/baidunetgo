@@ -44,7 +44,7 @@ func (a *App) shell(c *ui.Context, t *ui.Theme, p *palette) {
 					a.filesPage(c, t, p, dir)
 				case r.Match("/transfers"):
 					r.Title("传输")
-					a.placeholder(c, t, "arrow-up-down", "传输")
+					a.transfersPage(c, t, p)
 				case r.Match("/shares"):
 					r.Title("分享")
 					a.placeholder(c, t, "share-2", "分享")
@@ -167,12 +167,26 @@ func (a *App) navRow(c *ui.Context, t *ui.Theme, p *palette, it navItem, on bool
 	if a.sidebarCollapsed {
 		row.Tooltip(it.label)
 	}
+	badge := 0
+	if it.path == "/transfers" {
+		badge = a.activeTransfers()
+	}
 	row.Children(func() {
-		ui.Icon(c, icon(it.icon)).FontSize(17)
+		ui.Box(c).Children(func() {
+			ui.Icon(c, icon(it.icon)).FontSize(17)
+			if badge > 0 && a.sidebarCollapsed {
+				ui.Box(c).Absolute().Top(-3).Right(-4).Size(8, 8).Radius(4).Background(t.Accent).Transition(popIn)
+			}
+		})
 		if !a.sidebarCollapsed {
-			txt := ui.Text(c, it.label).SingleLine()
+			txt := ui.Text(c, it.label).SingleLine().Grow(1)
 			if on {
 				txt.FontWeight(600)
+			}
+			if badge > 0 {
+				ui.Text(c, itoa(badge)).FontSize(11).FontWeight(700).Padding(1, 7).Radius(999).
+					Background(t.Accent).TextColor(t.AccentText).FontFeatures("tnum").
+					ContentTransition(ui.ContentTransition{Numeric: true}).Transition(popIn)
 			}
 		}
 	})
@@ -201,6 +215,8 @@ func (a *App) titleBar(c *ui.Context, t *ui.Theme, p *palette) {
 		switch a.section() {
 		case "/recycle":
 			a.recycleToolbar(c, t, p)
+		case "/transfers":
+			a.transfersToolbar(c, t, p)
 		case "/search":
 			a.searchField(c, t, p)
 		}

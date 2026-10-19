@@ -17,6 +17,7 @@ func main() {
 	// speak it too.
 	mygo.App.SetLanguages("zh-Hans")
 	a := app.New()
+	mygo.App.OnWillQuit(func(*mygo.QuitEvent) { a.Shutdown() })
 	mygo.App.WhenReady(func() {
 		win := mygo.NewWindow(mygo.WindowOptions{
 			Title:           "BaiduNetGo",

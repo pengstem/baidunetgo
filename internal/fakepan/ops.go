@@ -2,6 +2,7 @@ package fakepan
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"path"
 	"strings"
@@ -20,6 +21,35 @@ func (s *Server) opsRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/recycle/restore", s.recycleRestore)
 	mux.HandleFunc("/api/recycle/delete", s.recyclePurge)
 	mux.HandleFunc("/api/recycle/clear", s.recycleClear)
+	mux.HandleFunc("/upload", s.upload)
+}
+
+// upload stores the request's body as a file, as the netdisk's uploads end.
+func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
+	data, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p := path.Clean("/" + r.URL.Query().Get("path"))
+	cat := 6
+	if strings.HasSuffix(p, ".png") || strings.HasSuffix(p, ".jpg") {
+		cat = 3
+	}
+	s.add(Node{Path: p, Data: data, Category: cat})
+	writeJSON(w, map[string]any{"errno": 0})
+}
+
+// Data returns the content of a file of the fake netdisk.
+func (s *Server) Data(p string) []byte {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if n := s.nodes[path.Clean(p)]; n != nil {
+		return n.Data
+	}
+	return nil
 }
 
 func (s *Server) create(w http.ResponseWriter, r *http.Request) {

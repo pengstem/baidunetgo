@@ -23,7 +23,11 @@ func (a *App) filesPage(c *ui.Context, t *ui.Theme, p *palette, dir string) {
 		l.sorted = a.order
 	}
 	a.fileActions(c, l)
-	ui.Box(c).Key("files:" + dir).Grow(1).Children(func() {
+	page := ui.Box(c).Key("files:" + dir).Grow(1)
+	if dropped := page.DroppedFiles(); len(dropped) > 0 {
+		a.upload(dropped, dir)
+	}
+	page.Children(func() {
 		switch {
 		case !l.loaded && l.err != "":
 			emptyState(c, t, p, "triangle-alert", "无法读取这个文件夹", l.err, func() { a.load(l) })
@@ -37,6 +41,24 @@ func (a *App) filesPage(c *ui.Context, t *ui.Theme, p *palette, dir string) {
 			a.fileList(c, t, p, l)
 		}
 		a.selectionBar(c, t, p, l)
+		if page.FileDragOver() {
+			a.dropZone(c, t, p, dir)
+		}
+	})
+}
+
+// dropZone shows where files dragged over the window will go.
+func (a *App) dropZone(c *ui.Context, t *ui.Theme, p *palette, dir string) {
+	zone := ui.Column(c).Key("dropzone").Absolute().Top(8).Left(12).Right(12).Bottom(12).Center().Gap(10).
+		Radius(18).Background(t.Background.Alpha(0.86)).Border(2, t.Accent).BorderStyle(ui.BorderDashed).PassThrough().
+		Transition(ui.ElementTransition{Animation: &springPop, Enter: &ui.Motion{Scale: 0.97, Opacity: 0}, Exit: &ui.Motion{Opacity: 0}})
+	zone.Children(func() {
+		badge := ui.Box(c).Size(64, 64).Radius(20).Center().Background(p.AccentSoft)
+		badge.Children(func() {
+			ic := ui.Icon(c, icon("upload")).FontSize(28).TextColor(t.Accent)
+			ic.Translate(0, float32(sinTurn(ic.Loop("lift", 1400*time.Millisecond, ui.EaseInOut)))*4)
+		})
+		ui.Text(c, "松开以上传到「"+dirLabel(dir)+"」").FontSize(16).FontWeight(600)
 	})
 }
 

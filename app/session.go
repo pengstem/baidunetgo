@@ -148,11 +148,13 @@ func (a *App) signOut() {
 // onSignedIn starts what the signed-in app shows.
 func (a *App) onSignedIn() {
 	a.startThumbs()
+	a.startTransfers()
 }
 
 // onSignedOut stops the work of the session.
 func (a *App) onSignedOut() {
 	a.login.stopQR()
 	a.stopThumbs()
+	a.stopTransfers()
 	a.listings = nil
 }

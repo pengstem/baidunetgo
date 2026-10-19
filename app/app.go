@@ -13,6 +13,7 @@ import (
 
 	"github.com/pengstem/baidunetgo/internal/auth"
 	"github.com/pengstem/baidunetgo/internal/baidu"
+	"github.com/pengstem/baidunetgo/internal/transfer"
 )
 
 // App is the state of the window.
@@ -37,6 +38,8 @@ type App struct {
 	recycle       recycleState
 	recycleDirty  bool
 	found         searchState
+	xfer          *transfer.Manager
+	transfers     transfersState
 	query         string
 	copyText      string // to put on the clipboard in the next frame
 	settings      settings
@@ -66,6 +69,13 @@ func (a *App) Attach(win *mygo.Window) {
 	a.store = openStore()
 	a.settings = loadSettings()
 	a.boot()
+}
+
+// Shutdown saves what must outlast the app, as it quits.
+func (a *App) Shutdown() {
+	if a.xfer != nil {
+		a.xfer.Close()
+	}
 }
 
 // update runs fn on the UI thread and redraws, from any goroutine. Without
