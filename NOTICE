@@ -1,0 +1,10 @@
+BaiduNetGo
+Copyright (c) 2026 pengstem
+
+This product includes:
+
+- BaiduPCS-Go (https://github.com/qjfoidnh/BaiduPCS-Go), Apache License 2.0.
+  Parts of its internal upload and share-transfer logic are adapted in
+  internal/pcsport.
+- Lucide icons (https://lucide.dev), ISC License, in app/icons.
+- MyGo (https://github.com/egoist/mygo), MIT License.
