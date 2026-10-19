@@ -4,8 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"time"
 )
+
+// sinTurn returns the sine of a fraction of a turn.
+func sinTurn(x float32) float64 { return math.Sin(2 * math.Pi * float64(x)) }
 
 // readAll reads r to its end, failing past limit bytes.
 func readAll(r io.Reader, limit int64) ([]byte, error) {

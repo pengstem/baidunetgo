@@ -71,7 +71,7 @@ func (c *Client) User(ctx context.Context) (*User, error) {
 func (c *Client) uid() (uint64, error) {
 	uidMu.Lock()
 	defer uidMu.Unlock()
-	if c.creds.UID != 0 {
+	if c.creds.UID != 0 || c.fake() {
 		return c.creds.UID, nil
 	}
 	t, err := tieba.NewUserInfoByBDUSS(c.creds.BDUSS)

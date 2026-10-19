@@ -16,6 +16,9 @@ var pcsURL = &url.URL{Scheme: "https", Host: "pcs.baidu.com", Path: "/"}
 // with Headers can read, as a player streams it. Links expire within
 // hours: ask for a new one each time.
 func (c *Client) DownloadURL(ctx context.Context, path string) (string, error) {
+	if c.fake() {
+		return c.base + "/file?" + url.Values{"path": {path}}.Encode(), nil
+	}
 	if _, err := c.uid(); err != nil {
 		return "", fmt.Errorf("获取下载链接失败：%w", err)
 	}

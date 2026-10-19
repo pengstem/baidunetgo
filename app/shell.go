@@ -1,6 +1,7 @@
 package app
 
 import (
+	"path"
 	"strings"
 
 	"github.com/egoist/mygo/ui"
@@ -35,8 +36,12 @@ func (a *App) shell(c *ui.Context, t *ui.Theme, p *palette) {
 			a.router.View(c, func(r *ui.Route) {
 				switch {
 				case r.Match("/files"), r.Match("/files/{path...}"):
-					r.Title("我的文件")
-					a.placeholder(c, t, "hard-drive", "我的文件")
+					dir := dirOfRoute(r.Param("path"))
+					r.Title(path.Base(dir))
+					if dir == "/" {
+						r.Title("我的文件")
+					}
+					a.filesPage(c, t, p, dir)
 				case r.Match("/transfers"):
 					r.Title("传输")
 					a.placeholder(c, t, "arrow-up-down", "传输")
@@ -179,6 +184,10 @@ func (a *App) titleBar(c *ui.Context, t *ui.Theme, p *palette) {
 	bar := c.TitleBar()
 	ui.Row(c).Height(max(bar.Height, titleBarMin)).PaddingStart(20).PaddingEnd(bar.Right + 16).
 		AlignItems(ui.Center).Gap(10).DragWindow().Children(func() {
+		if dir := a.currentDir(); dir != "" {
+			a.filesToolbar(c, t, p, dir)
+			return
+		}
 		ui.Text(c, a.router.Title()).FontSize(17).FontWeight(650).SingleLine()
 		ui.Spacer(c)
 	})

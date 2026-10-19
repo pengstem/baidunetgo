@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"log"
+	"os"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 
 	"github.com/pengstem/baidunetgo/internal/auth"
 	"github.com/pengstem/baidunetgo/internal/baidu"
+	"github.com/pengstem/baidunetgo/internal/fakepan"
 )
 
 // phase is where the app is in signing in.
@@ -41,6 +43,12 @@ func openStore() *auth.Store {
 
 // boot signs in with the saved session, if any, else asks to sign in.
 func (a *App) boot() {
+	if os.Getenv("BAIDUNETGO_FAKE") != "" {
+		srv := fakepan.New()
+		a.fake = true
+		go a.signInWith(baidu.OpenAt(baidu.Credentials{BDUSS: "fake", UID: 1}, srv.URL), false)
+		return
+	}
 	if a.store == nil {
 		a.phase = phaseLogin
 		return
@@ -61,7 +69,11 @@ func (a *App) boot() {
 // signIn checks the credentials and, if they sign in, saves them and shows
 // the netdisk. It runs on any goroutine.
 func (a *App) signIn(cr baidu.Credentials, fresh bool) {
-	c := baidu.Open(cr)
+	a.signInWith(baidu.Open(cr), fresh)
+}
+
+// signInWith signs in with a client.
+func (a *App) signInWith(c *baidu.Client, fresh bool) {
 	u, err := c.User(context.Background())
 	if err != nil {
 		a.update(func() {
@@ -75,7 +87,7 @@ func (a *App) signIn(cr baidu.Credentials, fresh bool) {
 		})
 		return
 	}
-	if a.store != nil {
+	if a.store != nil && !a.fake {
 		if err := a.store.Save(c.Credentials()); err != nil {
 			log.Printf("session: save: %v", err)
 		}
@@ -123,7 +135,7 @@ func (a *App) loadProfile(c *baidu.Client, u *baidu.User) {
 
 // signOut forgets the session.
 func (a *App) signOut() {
-	if a.store != nil {
+	if a.store != nil && !a.fake {
 		a.store.Clear()
 	}
 	a.onSignedOut()
@@ -134,9 +146,13 @@ func (a *App) signOut() {
 }
 
 // onSignedIn starts what the signed-in app shows.
-func (a *App) onSignedIn() {}
+func (a *App) onSignedIn() {
+	a.startThumbs()
+}
 
 // onSignedOut stops the work of the session.
 func (a *App) onSignedOut() {
 	a.login.stopQR()
+	a.stopThumbs()
+	a.listings = nil
 }

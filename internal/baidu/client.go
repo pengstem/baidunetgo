@@ -131,8 +131,21 @@ func Open(cr Credentials) *Client {
 	if tr, ok := hc.Client.Transport.(*http.Transport); ok {
 		tr.TLSClientConfig = &tls.Config{}
 	}
-	return &Client{pcs: pcs, http: &hc.Client, creds: cr, base: "https://pan.baidu.com"}
+	return &Client{pcs: pcs, http: &hc.Client, creds: cr, base: panBase}
 }
+
+const panBase = "https://pan.baidu.com"
+
+// OpenAt makes a client of a netdisk at base, a fake one in tests: its
+// download links are base's /file.
+func OpenAt(cr Credentials, base string) *Client {
+	c := Open(cr)
+	c.base = base
+	return c
+}
+
+// fake reports whether the client talks to a pretend netdisk.
+func (c *Client) fake() bool { return c.base != panBase }
 
 // Credentials returns what the client signs in with, with the uid once
 // User has found it.
@@ -147,8 +160,8 @@ func (c *Client) HTTP() *http.Client { return c.http }
 
 // panError is the error envelope of pan.baidu.com's API.
 type panError struct {
-	Errno  int    `json:"errno"`
-	ErrMsg string `json:"errmsg"`
+	Errno   int    `json:"errno"`
+	ErrMsg  string `json:"errmsg"`
 	ShowMsg string `json:"show_msg"`
 }
 

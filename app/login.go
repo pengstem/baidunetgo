@@ -131,8 +131,8 @@ func (a *App) loginView(c *ui.Context, t *ui.Theme, p *palette) {
 				Shadow(0, 24, 60, -12, p.Shadow).Shadow(0, 2, 6, 0, p.Shadow.Alpha(0.06)).
 				AlignItems(ui.Center).Transition(ui.ElementTransition{
 				Animation: &springPanel, Size: true,
-				Enter:     &ui.Motion{Scale: 0.92, Y: 16},
-				Exit:      &ui.Motion{Scale: 1.04},
+				Enter: &ui.Motion{Scale: 0.92, Y: 16},
+				Exit:  &ui.Motion{Scale: 1.04},
 			})
 			card.Children(func() {
 				ui.Column(c).Gap(6).AlignItems(ui.Center).Children(func() {
