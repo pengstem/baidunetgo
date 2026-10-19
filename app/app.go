@@ -73,6 +73,7 @@ func (a *App) Attach(win *mygo.Window) {
 	a.win = win
 	a.store = openStore()
 	a.settings = loadSettings()
+	a.useSettings()
 	a.boot()
 }
 

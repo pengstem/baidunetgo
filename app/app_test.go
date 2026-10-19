@@ -107,3 +107,14 @@ func names(files []baidu.File) []string {
 	}
 	return n
 }
+
+func TestSettingsPage(t *testing.T) {
+	a, tt, _ := signedIn(t)
+	a.router.Push("/settings")
+	waitFor(t, tt, "下载位置")
+	tt.Advance(time.Second)
+	save(t, tt, "settings")
+	tt.SetDark(true)
+	tt.Advance(500 * time.Millisecond)
+	save(t, tt, "settings-dark")
+}

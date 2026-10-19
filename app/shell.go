@@ -59,7 +59,7 @@ func (a *App) shell(c *ui.Context, t *ui.Theme, p *palette) {
 					a.searchPage(c, t, p, a.router.Query("q"))
 				case r.Match("/settings"):
 					r.Title("设置")
-					a.placeholder(c, t, "settings", "设置")
+					a.settingsPage(c, t, p)
 				}
 			})
 		})
@@ -159,6 +159,9 @@ func (a *App) navRow(c *ui.Context, t *ui.Theme, p *palette, it navItem, on bool
 	color := t.TextMuted
 	if on {
 		color = t.Accent
+		if it.path == "/settings" { // outside the pill's list
+			row.Background(p.Selected)
+		}
 	} else if row.Hovered() {
 		row.Background(p.Hover)
 		color = t.Text
@@ -224,12 +227,5 @@ func (a *App) titleBar(c *ui.Context, t *ui.Theme, p *palette) {
 		case "/search":
 			a.searchField(c, t, p)
 		}
-	})
-}
-
-func (a *App) placeholder(c *ui.Context, t *ui.Theme, ic, label string) {
-	ui.Column(c).Grow(1).Center().Gap(12).Children(func() {
-		ui.Icon(c, icon(ic)).FontSize(40).TextColor(t.TextMuted).Transition(popIn)
-		ui.Text(c, label).TextColor(t.TextMuted)
 	})
 }

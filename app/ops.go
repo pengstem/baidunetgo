@@ -273,6 +273,9 @@ func (a *App) fileActions(c *ui.Context, l *listing) {
 		return
 	}
 	files := l.chosen()
+	if l.dir != "/" && c.Shortcut(ui.Alt, ui.KeyUp) {
+		a.router.Push(filesRoute(path.Dir(l.dir)))
+	}
 	if c.Shortcut(ui.Cmd|ui.Shift, ui.KeyN) {
 		a.ask(dlgNewFolder, l.dir, nil)
 	}
