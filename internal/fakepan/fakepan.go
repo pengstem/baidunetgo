@@ -11,6 +11,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"io"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -53,6 +54,14 @@ func New() *Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/loginStatus", s.loginStatus)
 	mux.HandleFunc("/api/quota", s.quota)
+	mux.HandleFunc("/rest/2.0/xpan/nas", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, map[string]any{"errno": 0, "vip_type": 2, "baidu_name": "演示用户"})
+	})
+	mux.HandleFunc("/rest/2.0/membership/user", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, map[string]any{"errno": 0, "product_infos": []any{
+			map[string]any{"cluster": "vip", "detail_cluster": "svip", "end_time": 1824047999},
+		}})
+	})
 	mux.HandleFunc("/api/list", s.list)
 	mux.HandleFunc("/api/search", s.search)
 	mux.HandleFunc("/thumb", s.thumb)
@@ -242,11 +251,25 @@ func (s *Server) file(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
-	data := n.Data
-	if data == nil {
-		data = make([]byte, min(n.Size, 4<<20))
+	// As the netdisk's download hosts: bounded ranges only.
+	rng := r.Header.Get("Range")
+	if a, b, ok := strings.Cut(strings.TrimPrefix(rng, "bytes="), "-"); !ok || a == "" || b == "" {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
 	}
-	http.ServeContent(w, r, path.Base(n.Path), time.Unix(n.Mtime, 0), bytes.NewReader(data))
+	var content io.ReadSeeker = bytes.NewReader(n.Data)
+	if n.Data == nil {
+		content = io.NewSectionReader(zeros{}, 0, n.Size) // zeros, never allocated
+	}
+	http.ServeContent(w, r, path.Base(n.Path), time.Unix(n.Mtime, 0), content)
+}
+
+// zeros reads as zero bytes everywhere.
+type zeros struct{}
+
+func (zeros) ReadAt(p []byte, off int64) (int, error) {
+	clear(p)
+	return len(p), nil
 }
 
 func b2i(b bool) int {
@@ -255,3 +278,6 @@ func b2i(b bool) int {
 	}
 	return 0
 }
+
+// SamplePNG draws a soft gradient picture, different for each seed.
+func SamplePNG(seed, w, h int) []byte { return swatchPNG(seed, w, h) }

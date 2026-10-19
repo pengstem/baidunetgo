@@ -26,9 +26,7 @@ func (a *App) profile(c *ui.Context, t *ui.Theme, p *palette) {
 			ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, s.user.Name).FontWeight(600).SingleLine().Shrink(1)
 				if v := s.user.VIPLabel(); v != "" {
-					ui.Text(c, v).FontSize(10).FontWeight(700).Padding(1, 5).Radius(5).
-						TextColor(ui.Hex("#5b3a00")).
-						LinearGradient(ui.LinearGradient{Stops: []ui.GradientStop{{Color: ui.Hex("#fde68a"), At: 0}, {Color: ui.Hex("#f59e0b"), At: 1}}, Angle: 90})
+					vipBadge(c, v)
 				}
 			})
 			q := s.quota

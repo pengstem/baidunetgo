@@ -13,6 +13,7 @@ import (
 
 	"github.com/pengstem/baidunetgo/internal/auth"
 	"github.com/pengstem/baidunetgo/internal/baidu"
+	"github.com/pengstem/baidunetgo/internal/stream"
 	"github.com/pengstem/baidunetgo/internal/transfer"
 )
 
@@ -39,6 +40,9 @@ type App struct {
 	recycleDirty  bool
 	found         searchState
 	xfer          *transfer.Manager
+	stream        *stream.Server
+	tuning        bool   // measuring download speeds
+	tuneErr       string // why the last measurement failed
 	transfers     transfersState
 	shareForm     shareForm
 	shares        sharesState

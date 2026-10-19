@@ -9,6 +9,7 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"github.com/pengstem/baidunetgo/internal/baidu"
+	"github.com/pengstem/baidunetgo/internal/pcsimport"
 )
 
 // loginState is the sign-in screen.
@@ -25,6 +26,9 @@ type loginState struct {
 	cookie string
 	busy   bool
 	err    string
+
+	pcs        *pcsimport.Account // BaiduPCS-Go's account, if any
+	pcsChecked bool
 }
 
 func (l *loginState) stopQR() {
@@ -148,6 +152,7 @@ func (a *App) loginView(c *ui.Context, t *ui.Theme, p *palette) {
 					ui.Text(c, "登录百度网盘").FontSize(21).FontWeight(650)
 					ui.Text(c, "你的文件，优雅地呈现").TextColor(t.TextMuted)
 				})
+				a.pcsImport(c, t, p)
 				a.loginTabs(c, t, p)
 				ui.Box(c).Width(324).Children(func() {
 					if l.tab == 0 {
@@ -333,4 +338,38 @@ func (a *App) cookiePanel(c *ui.Context, t *ui.Theme, p *palette) {
 		go a.signIn(cr, true)
 	}
 	ui.Text(c, "凭据只加密保存在本机，密钥存放于系统钥匙串。").TextColor(t.TextMuted).FontSize(t.Rem(0.82))
+}
+
+// pcsImport offers to sign in with the account BaiduPCS-Go uses.
+func (a *App) pcsImport(c *ui.Context, t *ui.Theme, p *palette) {
+	l := &a.login
+	if !l.pcsChecked && !a.fake {
+		l.pcsChecked = true
+		l.pcs, _ = pcsimport.Find()
+	}
+	if l.pcs == nil {
+		return
+	}
+	b := ui.ButtonBase(c).Label("使用 BaiduPCS-Go 的账号").Width(324).Padding(10, 14).Gap(12).Radius(12).
+		AlignItems(ui.Center).Justify(ui.Start).Background(p.AccentSoft).Disabled(l.busy).Transition(rowEnter)
+	if b.Hovered() {
+		b.AnimatePose(ui.Pose{Y: -1}, springPop)
+	} else {
+		b.AnimatePose(ui.Pose{}, springPop)
+	}
+	b.Children(func() {
+		ui.Box(c).Size(30, 30).Radius(9).Center().Background(t.Accent).TextColor(t.AccentText).Children(func() {
+			ui.Icon(c, icon("user")).FontSize(16)
+		})
+		ui.Column(c).Grow(1).Gap(1).Children(func() {
+			ui.Text(c, "使用 BaiduPCS-Go 的登录").FontWeight(600)
+			ui.Text(c, l.pcs.Name).FontSize(t.Rem(0.84)).TextColor(t.TextMuted).SingleLine()
+		})
+		ui.Icon(c, icon("chevron-right")).FontSize(15).TextColor(t.Accent)
+	})
+	if b.Clicked() {
+		l.busy, l.err = true, ""
+		cr := l.pcs.Creds
+		go a.signIn(cr, true)
+	}
 }

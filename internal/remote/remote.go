@@ -24,52 +24,70 @@ type Expired func(error) bool
 // ErrTooLarge is what ReadAll returns for a file over its limit.
 var ErrTooLarge = errors.New("文件太大，无法预览")
 
+// Parallel is how many ranges ReadAll fetches at once.
+var Parallel = 4
+
 // ReadAll reads a whole file into memory, calling progress with the bytes
-// read so far, and fails with ErrTooLarge past limit bytes.
+// read so far, and fails with ErrTooLarge past limit bytes. The netdisk
+// answers only bounded ranges, so it reads the file in chunks, a few at
+// a time.
 func ReadAll(ctx context.Context, src Source, expired Expired, path string, size, limit int64, progress func(done int64)) ([]byte, error) {
 	if size > limit {
 		return nil, ErrTooLarge
 	}
-	buf := make([]byte, 0, size)
-	for attempt := 0; ; attempt++ {
-		u, err := src.DownloadURL(ctx, path)
-		if err != nil {
-			return nil, err
-		}
-		resp, err := src.Fetch(ctx, u, int64(len(buf)), 0)
-		if err != nil {
-			if attempt < 2 && expired != nil && expired(err) {
-				continue
-			}
-			return nil, err
-		}
-		chunk := make([]byte, 64<<10)
-		for {
-			n, rerr := resp.Body.Read(chunk)
-			buf = append(buf, chunk[:n]...)
-			if int64(len(buf)) > limit {
-				resp.Body.Close()
-				return nil, ErrTooLarge
-			}
-			if progress != nil && n > 0 {
-				progress(int64(len(buf)))
-			}
-			if rerr == io.EOF {
-				resp.Body.Close()
-				return buf, nil
-			}
-			if rerr != nil {
-				resp.Body.Close()
-				if ctx.Err() != nil {
-					return nil, ctx.Err()
-				}
-				if attempt < 2 {
-					break // resume from where it stopped with a new link
-				}
-				return nil, rerr
-			}
-		}
+	if size == 0 {
+		return []byte{}, nil
 	}
+	f := Open(ctx, src, expired, path, size)
+	buf := make([]byte, size)
+	n := int((size + chunkSize - 1) / chunkSize)
+	var (
+		mu    sync.Mutex
+		done  int64
+		first error
+		next  int
+		wg    sync.WaitGroup
+	)
+	for range min(max(Parallel, 1), n) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				mu.Lock()
+				i := next
+				next++
+				stop := first != nil
+				mu.Unlock()
+				if i >= n || stop {
+					return
+				}
+				c, err := f.fetchChunk(int64(i))
+				mu.Lock()
+				if err != nil {
+					if first == nil {
+						first = err
+					}
+					mu.Unlock()
+					return
+				}
+				copy(buf[int64(i)*chunkSize:], c)
+				done += int64(len(c))
+				d := done
+				mu.Unlock()
+				if progress != nil {
+					progress(d)
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	if first != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return nil, first
+	}
+	return buf, nil
 }
 
 const chunkSize = 512 << 10
@@ -155,6 +173,26 @@ func (f *File) chunk(idx int64) ([]byte, error) {
 		f.mu.Unlock()
 		return c, nil
 	}
+	f.mu.Unlock()
+	data, err := f.fetchChunk(idx)
+	if err != nil {
+		return nil, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.chunks[idx] = data
+	f.order = append(f.order, idx)
+	if len(f.order) > 32 { // keep 16 MB
+		delete(f.chunks, f.order[0])
+		f.order = f.order[1:]
+	}
+	return data, nil
+}
+
+// fetchChunk reads chunk idx with a bounded range, asking for a new link
+// when the one it has expired.
+func (f *File) fetchChunk(idx int64) ([]byte, error) {
+	f.mu.Lock()
 	u := f.url
 	f.mu.Unlock()
 
@@ -188,14 +226,8 @@ func (f *File) chunk(idx int64) ([]byte, error) {
 	}
 
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.url = u
-	f.chunks[idx] = data
-	f.order = append(f.order, idx)
-	if len(f.order) > 32 { // keep 16 MB
-		delete(f.chunks, f.order[0])
-		f.order = f.order[1:]
-	}
+	f.mu.Unlock()
 	return data, nil
 }
 

@@ -16,6 +16,15 @@ func main() {
 	// The interface is written in Chinese: MyGo's own controls and menus
 	// speak it too.
 	mygo.App.SetLanguages("zh-Hans")
+	// One name however it is launched, so that go run, mygo dev and the
+	// packaged app share the session and settings.
+	mygo.App.SetName("BaiduNetGo")
+	if selfTest() {
+		if err := mygo.App.Run(); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
 	a := app.New()
 	mygo.App.OnWillQuit(func(*mygo.QuitEvent) { a.Shutdown() })
 	mygo.App.WhenReady(func() {

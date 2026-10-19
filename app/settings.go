@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 
 	"github.com/egoist/mygo"
+
+	"github.com/pengstem/baidunetgo/internal/tune"
 )
 
 // settings are the user's choices, kept as JSON in the app's data
@@ -16,6 +18,20 @@ type settings struct {
 	Threads     int    `json:"threads,omitempty"`      // connections per download
 	Parallel    int    `json:"parallel,omitempty"`     // downloads at once
 	PreviewMB   int    `json:"preview_mb,omitempty"`   // largest picture or text previewed, in MB
+	// Manual keeps Threads and Parallel as set; else they follow the
+	// membership and the last measurement.
+	Manual bool `json:"manual_transfer,omitempty"`
+	// Tune is the last measurement of download speeds, and the
+	// membership it was made with.
+	Tune *tuneRecord `json:"tune,omitempty"`
+	// SkipPCSImport stops signing in with BaiduPCS-Go's account by itself,
+	// once the user signed out of it.
+	SkipPCSImport bool `json:"skip_pcs_import,omitempty"`
+}
+
+type tuneRecord struct {
+	VIP    int          `json:"vip"`
+	Result *tune.Result `json:"result"`
 }
 
 func settingsPath() string {

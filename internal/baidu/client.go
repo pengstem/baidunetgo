@@ -209,6 +209,8 @@ func errnoText(n int) string {
 		return "链接格式错误"
 	case -21:
 		return "分享已失效"
+	case 132:
+		return "需要安全验证，请在百度网盘网页版或 App 中完成后重试"
 	case -62, -70:
 		return "需要验证码，请稍后再试"
 	}

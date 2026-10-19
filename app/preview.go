@@ -270,16 +270,17 @@ func (a *App) playInMPV(f baidu.File) {
 		a.toast(err.Error(), "error")
 		return
 	}
+	if a.stream == nil {
+		a.toast("本地串流服务没有启动", "error")
+		return
+	}
+	// mpv reads through the app's loopback server, which turns its
+	// open-ended ranges into the bounded ones the netdisk serves.
+	if err := player.Play(mpv, a.stream.URL(f.Path, f.Size), f.Name, nil); err != nil {
+		a.toast("播放失败："+err.Error(), "error")
+		return
+	}
 	a.toast("正在用 mpv 播放「"+f.Name+"」", "")
-	go func() {
-		u, err := s.client.DownloadURL(context.Background(), f.Path)
-		if err == nil {
-			err = player.Play(mpv, u, f.Name, s.client.Headers())
-		}
-		if err != nil {
-			a.update(func() { a.toast("播放失败："+err.Error(), "error") })
-		}
-	}()
 }
 
 // step shows the picture before (-1) or after (+1) in its folder.

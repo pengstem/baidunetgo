@@ -1,0 +1,65 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## What this is
+
+BaiduNetGo is a Baidu Netdisk desktop client in pure Go (no cgo). The UI uses MyGo's native `ui` package (`github.com/egoist/mygo/ui`, immediate mode, drawn on the GPU, no webview). Netdisk access uses BaiduPCS-Go's importable packages (`baidupcs`, `requester`, `pcsutil`) as a library. UI strings are Chinese, and `main.go` forces the zh-Hans locale for MyGo's own controls.
+
+## Commands
+
+```bash
+go tool mygo dev                      # run with live rebuild (real netdisk)
+BAIDUNETGO_FAKE=1 go run .            # run against the in-process fake netdisk, no account needed
+go test ./...                         # all tests (app tests take ~30s)
+go test ./app -run TestPreviewImage -v
+go test -tags live ./internal/baidu -run Live -v   # real netdisk: QR endpoint, membership, ranges (uses BaiduPCS-Go's login)
+BAIDUNETGO_SELFTEST=report.json BAIDUNETGO_PROBE=1 go run .   # self-test every feature against the real account, plus a speed probe
+go vet ./... && gofmt -l .
+go tool mygo build                    # package for this platform into build/
+CGO_ENABLED=0 GOOS=windows go build -o /dev/null .   # cross-compile check
+```
+
+Dev-only environment variables (see `capture.go`, `app/app.go`, `app/session.go`):
+- `BAIDUNETGO_FAKE=1`: sign in to `internal/fakepan` instead of Baidu.
+- `BAIDUNETGO_ROUTE=/files/照片`: router start page.
+- `BAIDUNETGO_GRID=1`: start in grid view.
+- `BAIDUNETGO_CAPTURE=out.png` (with `BAIDUNETGO_CAPTURE_AFTER=4s`): write a PNG of the window, then quit. This is how to look at the real window from a script.
+- `BAIDUNETGO_SELFTEST=report.json` (`selftest.go`, `internal/selftest`): headless run of every feature against the saved session, else BaiduPCS-Go's login, inside a `/BaiduNetGo自检-…` folder it deletes afterwards. `BAIDUNETGO_PROBE=1` adds the download speed probe.
+- `BAIDUNETGO_SNAPSHOTS=dir` with `go test ./app`: tests that call `save(t, tt, name)` write `ui.Tester.Image()` PNGs there, for visual checks without a window.
+
+## Architecture
+
+**UI threading model.** `app.App` holds all state. The view (`App.View`) runs on the main thread every frame and only reads state. Network work runs on goroutines and writes results back through `a.update(fn)`, which is `Window.Update` in the real app. With no window (tests), it queues `fn` and `runQueued` drains the queue at the start of the next frame. Never mutate `App` state directly from a goroutine. Toasts and clipboard writes need a `*ui.Context`, so code outside the view queues them (`a.toast`, `a.pendingToasts`, `a.copy`) and the view flushes them.
+
+**Phases and routing.** `App.phase` is booting → login → ready. Once ready, `shell.go` draws the sidebar and title bar around a `ui.Router` with these routes: `/files/{path...}` (netdisk path, segments `url.PathEscape`d by `filesRoute`/`dirOfRoute`), `/search?q=`, `/transfers`, `/shares`, `/offline`, `/recycle`, `/settings`. The title bar's controls switch on `a.section()`. Each directory gets its own `listing` (cached in `a.listings`, keyed by dir), so a page sliding out during a router transition keeps showing its own files.
+
+**Overlays.** One `a.dlg` (`dialog` with a `dialogKind`) drives every modal through `a.dialogs`. The file preview is a separate overlay (`a.pv`, `previewOverlay`). The image preview and the grid/list thumbnails share `ui.ElementTransition{Match: thumbMatch{fsid}}`. The source thumbnail is skipped while `a.previewing(f)`, so the image grows out of it and shrinks back.
+
+**Netdisk client (`internal/baidu`).** `baidu.Open(creds)` builds a `baidupcs.BaiduPCS` from cookies and never touches BaiduPCS-Go's global config. It also turns TLS verification back on (the library disables it). Two code paths:
+- **Library calls** for `LocateDownload` (download links, which need the uid, fetched once from Tieba), upload (`internal/pcsport`, ported from BaiduPCS-Go's `internal/` under Apache-2.0), and share-link saving.
+- **The pan.baidu.com web API**, called directly through `getJSON`/`postForm` against `c.base`, for everything else: list (with `web=1` for thumbnails), file manager ops, recycle bin, shares, `cloud_dl`. Writes carry a `bdstoken`, fetched from `/api/loginStatus`.
+
+`baidu.OpenAt(creds, base)` points the client at a fake server. `c.fake()` swaps in fake-friendly behavior in the few library-bound paths (download URL, upload, save share). Errno -6/-4/111 maps to `ErrNotLoggedIn`, which signs the user out.
+
+**Download hosts only serve bounded ranges.** `bytes=a-b` works. No Range header, or an open-ended `bytes=a-`, returns 403 (small files sometimes slip through). Every content read must therefore be bounded: `remote` (chunked, `remote.Parallel` at once), `transfer`, `tune`. mpv, whose ffmpeg sends open-ended ranges, reads through `internal/stream`, a loopback HTTP server with a random token per file. It splits requests into bounded chunks fetched `Ahead` at a time and re-requests the link when it expires. fakepan's `/file` enforces the same rule.
+
+**Membership and auto-tuning.** loginStatus's `vip_type` uses its own scheme (22 for an annual SVIP). The membership level comes from `/rest/2.0/xpan/nas?method=uinfo` (0/1/2), and the expiry from `/rest/2.0/membership/user`. `internal/tune` measures throughput per connection count (`Probe`) and picks the fewest connections within 90% of the fastest (`Best`/`Recommend`). Its defaults by level come from `ForVIP`. The app measures once per membership level per week (`app/tuning.go`, stored in `settings.Tune`), unless `settings.Manual` is set. `useSettings` pushes the result into the transfer manager, `remote.Parallel` and the stream server.
+
+**Sign-in sources.** The saved session (`internal/auth`) comes first. If there is none, the app signs in automatically with BaiduPCS-Go's active account (`internal/pcsimport`, reading `pcs_config.json`), unless the user signed out on purpose (`settings.SkipPCSImport`). The login screen also offers it as a button.
+
+**Fake netdisk (`internal/fakepan`).** An `httptest` server that emulates every web endpoint the client uses, over an in-memory tree with generated images, a PDF and a WAV. App UI tests (`app/*_test.go`, helper `signedIn` in `app/app_test.go`) drive real views with `ui.Tester` against it. When adding a new API call, add its endpoint to fakepan too.
+
+**No-disk previews.** `internal/remote` reads files into memory via Range requests (`ReadAll` with size limits, or a seekable `File` with a chunk cache for streaming audio) and re-requests the link on 403. PDFs render through `internal/pdf`: PDFium compiled to WebAssembly, run in wazero, pool started lazily by `pdf.Warm`. Video, and audio formats MyGo's `audio` package can't decode, go to mpv via `internal/player` with `--user-agent` and `--http-header-fields-append=Cookie: …`.
+
+**Transfers (`internal/transfer`).** `Manager` is a queue run by `Parallel`. Downloads fetch 4 MB blocks over `Threads` connections into `<file>.bngdl`, with a `.bngdl.json` sidecar of finished blocks for resume. Task state persists to `transfers.json` in the user data dir. `OnChange`/`OnFinish` are called outside the manager's lock and read tasks back through `Tasks()`. Don't call them while holding `m.mu`: that deadlocked once.
+
+**Session storage (`internal/auth`).** Credentials are AES-GCM encrypted in `session.enc` under the user data dir. The key lives in `mygo.Secrets` (the system keyring), with a 0600 key-file fallback. Settings are plain JSON (`app/settings.go`).
+
+## MyGo UI gotchas found here
+
+- Absolutely positioned elements paint above their in-flow siblings. To draw something *under* content (segmented thumbs), paint it in the parent's `Draw` callback. To layer content over absolute decorations, make the content absolute too.
+- `ui.List` row selection paints the accent color itself (`Selected()`). The browser covers it with an opaque `selectionFill`.
+- Dialogs focus their first focusable element. A focused button keeps Enter, so main buttons use `AutoFocus` (only in dialogs without a text field).
+- Virtualized `List` rows get no enter/exit transitions. Staggered entrances use `Keyframes` inside the row (`entering` in `browser.go`).
+- Theme: `applyTheme` swaps in the app's light/dark `ui.Theme` each frame. Extra colors are in `palette`. Shared springs/transitions (`springSoft`, `popIn`, `rowEnter`, …) are in `app/theme.go`.

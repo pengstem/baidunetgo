@@ -29,7 +29,8 @@ func (a *App) startTransfers() {
 		}
 	}
 	m := transfer.New(a.sess.client, baidu.Expired, state)
-	m.Threads, m.Parallel = a.settings.threads(), a.settings.parallel()
+	cfg := a.transferConfig()
+	m.Threads, m.Parallel = cfg.Threads, cfg.Parallel
 	m.OnChange = func() {
 		tasks := m.Tasks()
 		a.update(func() {

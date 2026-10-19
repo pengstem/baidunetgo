@@ -22,9 +22,11 @@ func (a *App) applySettings() {
 
 // useSettings lets what runs follow the settings.
 func (a *App) useSettings() {
+	cfg := a.transferConfig()
 	if a.xfer != nil {
-		a.xfer.Threads, a.xfer.Parallel = a.settings.threads(), a.settings.parallel()
+		a.xfer.Threads, a.xfer.Parallel = cfg.Threads, cfg.Parallel
 	}
+	a.useStreaming(cfg)
 	if mb := a.settings.PreviewMB; mb > 0 {
 		imageLimit = int64(mb) << 20
 		textLimit = int64(min(mb, 64)) << 20
@@ -36,30 +38,8 @@ func (a *App) settingsPage(c *ui.Context, t *ui.Theme, p *palette) {
 	s := &a.settings
 	ui.Scroll(c).Grow(1).Padding(8, 24, 40).Children(func() {
 		ui.Column(c).MaxWidth(720).Gap(22).Children(func() {
-			section(c, t, p, "传输", func() {
-				settingRow(c, t, p, "folder-open", "下载位置", s.downloadDir(), func() {
-					if pill(c, t, p, "", "更改…", false).Clicked() {
-						a.pickDownloadDir()
-					}
-				})
-				threads, parallel := float64(s.threads()), float64(s.parallel())
-				settingRow(c, t, p, "arrow-up-down", "每个文件的连接数", "非会员账号建议 1–4，过多可能被限速", func() {
-					ui.Text(c, itoa(int(threads))).Width(24).TextAlign(ui.End).FontFeatures("tnum").
-						ContentTransition(ui.ContentTransition{Numeric: true})
-					if ui.Stepper(c, &threads, 1, 16, 1).Label("连接数").Changed() {
-						s.Threads = int(threads)
-						a.applySettings()
-					}
-				})
-				settingRow(c, t, p, "layout-grid", "同时传输的文件数", "", func() {
-					ui.Text(c, itoa(int(parallel))).Width(24).TextAlign(ui.End).FontFeatures("tnum").
-						ContentTransition(ui.ContentTransition{Numeric: true})
-					if ui.Stepper(c, &parallel, 1, 6, 1).Label("同时传输数").Changed() {
-						s.Parallel = int(parallel)
-						a.applySettings()
-					}
-				})
-			})
+			a.accountSection(c, t, p)
+			a.tuneSection(c, t, p)
 			section(c, t, p, "预览", func() {
 				mb := float64(s.PreviewMB)
 				if mb == 0 {
@@ -149,4 +129,45 @@ func (a *App) pickMPV() {
 			a.applySettings()
 		})
 	}()
+}
+
+// accountSection is who is signed in and their membership.
+func (a *App) accountSection(c *ui.Context, t *ui.Theme, p *palette) {
+	sess := a.sess
+	if sess == nil || sess.user == nil {
+		return
+	}
+	u := sess.user
+	section(c, t, p, "账户", func() {
+		ui.Row(c).MinHeight(64).Padding(12, 16).Gap(14).AlignItems(ui.Center).Children(func() {
+			ui.Avatar(c, u.Name, sess.avatar).Size(40, 40)
+			ui.Column(c).Grow(1).Shrink(1).Gap(3).Children(func() {
+				ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+					ui.Text(c, u.Name).FontWeight(600).SingleLine().Shrink(1)
+					if l := u.VIPLabel(); l != "" {
+						vipBadge(c, l)
+					}
+				})
+				detail := "普通用户：下载速度受限，自动优化会用较少的连接"
+				switch {
+				case u.VIP > 0 && !u.VIPUntil.IsZero():
+					detail = u.VIPLabel() + " 会员，" + u.VIPUntil.Format("2006 年 1 月 2 日") + "到期"
+				case u.VIP > 0:
+					detail = u.VIPLabel() + " 会员"
+				}
+				ui.Text(c, detail).FontSize(t.Rem(0.84)).TextColor(t.TextMuted)
+			})
+			b := pill(c, t, p, "log-out", "退出登录", false).TextColor(t.Danger)
+			if b.Clicked() {
+				a.signOut()
+			}
+		})
+	})
+}
+
+// vipBadge is the golden label of a membership.
+func vipBadge(c *ui.Context, label string) ui.Element {
+	return ui.Text(c, label).FontSize(10).FontWeight(700).Padding(1, 5).Radius(5).
+		TextColor(ui.Hex("#5b3a00")).
+		LinearGradient(ui.LinearGradient{Stops: []ui.GradientStop{{Color: ui.Hex("#fde68a"), At: 0}, {Color: ui.Hex("#f59e0b"), At: 1}}, Angle: 90})
 }

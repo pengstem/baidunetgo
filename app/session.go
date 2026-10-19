@@ -12,6 +12,8 @@ import (
 	"github.com/pengstem/baidunetgo/internal/auth"
 	"github.com/pengstem/baidunetgo/internal/baidu"
 	"github.com/pengstem/baidunetgo/internal/fakepan"
+	"github.com/pengstem/baidunetgo/internal/pcsimport"
+	"github.com/pengstem/baidunetgo/internal/stream"
 )
 
 // phase is where the app is in signing in.
@@ -59,6 +61,16 @@ func (a *App) boot() {
 			if !errors.Is(err, auth.ErrNoSession) {
 				log.Printf("session: %v", err)
 			}
+			// A user of BaiduPCS-Go is signed in already.
+			if acc, perr := pcsimport.Find(); perr == nil && !a.settings.SkipPCSImport {
+				a.signIn(acc.Creds, false)
+				a.update(func() {
+					if a.phase == phaseReady {
+						a.toast("已自动使用 BaiduPCS-Go 的登录", "success")
+					}
+				})
+				return
+			}
 			a.update(func() { a.phase = phaseLogin })
 			return
 		}
@@ -93,6 +105,10 @@ func (a *App) signInWith(c *baidu.Client, fresh bool) {
 		}
 	}
 	a.update(func() {
+		if fresh && a.settings.SkipPCSImport {
+			a.settings.SkipPCSImport = false
+			a.settings.save()
+		}
 		a.sess = &session{client: c, user: u}
 		a.login = loginState{}
 		a.phase = phaseReady
@@ -137,6 +153,10 @@ func (a *App) loadProfile(c *baidu.Client, u *baidu.User) {
 func (a *App) signOut() {
 	if a.store != nil && !a.fake {
 		a.store.Clear()
+		// Signed out on purpose: do not sign in with BaiduPCS-Go's
+		// account again by itself.
+		a.settings.SkipPCSImport = true
+		a.settings.save()
 	}
 	a.onSignedOut()
 	a.sess = nil
@@ -149,12 +169,23 @@ func (a *App) signOut() {
 func (a *App) onSignedIn() {
 	a.startThumbs()
 	a.startTransfers()
+	if srv, err := stream.Start(a.sess.client, baidu.Expired); err == nil {
+		a.stream = srv
+	} else {
+		log.Printf("stream: %v", err)
+	}
+	a.useSettings()
+	a.maybeTune()
 }
 
 // onSignedOut stops the work of the session.
 func (a *App) onSignedOut() {
 	a.login.stopQR()
 	a.stopThumbs()
+	if a.stream != nil {
+		a.stream.Close()
+		a.stream = nil
+	}
 	a.stopTransfers()
 	a.shares, a.offline, a.recycle = sharesState{}, offlineState{}, recycleState{}
 	a.listings = nil
