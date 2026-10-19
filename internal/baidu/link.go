@@ -1,0 +1,128 @@
+package baidu
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"strings"
+)
+
+var pcsURL = &url.URL{Scheme: "https", Host: "pcs.baidu.com", Path: "/"}
+
+// DownloadURL returns a link to the file's content that range requests
+// with Headers can read, as a player streams it. Links expire within
+// hours: ask for a new one each time.
+func (c *Client) DownloadURL(ctx context.Context, path string) (string, error) {
+	if _, err := c.uid(); err != nil {
+		return "", fmt.Errorf("获取下载链接失败：%w", err)
+	}
+	type result struct {
+		u   string
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		info, perr := c.pcs.LocateDownload(path)
+		if perr != nil {
+			done <- result{err: fmt.Errorf("获取下载链接失败：%w", perr)}
+			return
+		}
+		var fallback string
+		for _, u := range info.URLStrings(true) {
+			s := u.String()
+			if fallback == "" {
+				fallback = s
+			}
+			// nb.cache hosts throttle hard; prefer any other.
+			if !strings.HasPrefix(u.Host, "nb.cache") {
+				done <- result{u: s}
+				return
+			}
+		}
+		if fallback == "" {
+			done <- result{err: errors.New("获取下载链接失败：没有可用链接")}
+			return
+		}
+		done <- result{u: fallback}
+	}()
+	select {
+	case r := <-done:
+		return r.u, r.err
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+}
+
+// Cookie returns the cookie header that download hosts take, those the
+// session holds for pcs.baidu.com.
+func (c *Client) Cookie() string {
+	var parts []string
+	for _, ck := range c.http.Jar.Cookies(pcsURL) {
+		parts = append(parts, ck.Name+"="+ck.Value)
+	}
+	return strings.Join(parts, "; ")
+}
+
+// Headers returns the headers requests for a download link need.
+func (c *Client) Headers() http.Header {
+	h := http.Header{}
+	h.Set("User-Agent", UserAgent)
+	if ck := c.Cookie(); ck != "" {
+		h.Set("Cookie", ck)
+	}
+	return h
+}
+
+// Fetch GETs a download or thumbnail URL with the session's headers,
+// reading bytes [off, off+n) when n > 0, all of it when n <= 0.
+func (c *Client) Fetch(ctx context.Context, u string, off, n int64) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header = c.Headers()
+	if n > 0 {
+		req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", off, off+n-1))
+	} else if off > 0 {
+		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", off))
+	}
+	resp, err := c.data().Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		resp.Body.Close()
+		return nil, &HTTPError{Status: resp.StatusCode, Body: string(body)}
+	}
+	return resp, nil
+}
+
+// HTTPError is a download host refusing a request.
+type HTTPError struct {
+	Status int
+	Body   string
+}
+
+func (e *HTTPError) Error() string {
+	if e.Status == http.StatusForbidden {
+		return "下载被拒绝 (403)，链接可能已过期"
+	}
+	return fmt.Sprintf("下载失败：HTTP %d", e.Status)
+}
+
+// Expired reports whether err means the link should be asked for again.
+func Expired(err error) bool {
+	var he *HTTPError
+	return errors.As(err, &he) && (he.Status == http.StatusForbidden || he.Status == http.StatusUnauthorized || he.Status == http.StatusGone)
+}
+
+// data returns the HTTP client for content: the session's transport,
+// without its jar (the cookie header is set by hand) and without a
+// timeout over the whole body, which streams.
+func (c *Client) data() *http.Client {
+	return &http.Client{Transport: c.http.Transport}
+}

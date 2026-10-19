@@ -1,0 +1,64 @@
+package app
+
+import (
+	"errors"
+	"fmt"
+	"io"
+	"time"
+)
+
+// readAll reads r to its end, failing past limit bytes.
+func readAll(r io.Reader, limit int64) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(r, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > limit {
+		return nil, errors.New("too large")
+	}
+	return data, nil
+}
+
+// humanSize writes a size in bytes as people read it.
+func humanSize(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	f := float64(n)
+	for _, u := range []string{"KB", "MB", "GB", "TB"} {
+		f /= unit
+		if f < unit {
+			if f < 10 {
+				return fmt.Sprintf("%.1f %s", f, u)
+			}
+			return fmt.Sprintf("%.0f %s", f, u)
+		}
+	}
+	return fmt.Sprintf("%.0f PB", f/unit)
+}
+
+// humanTime writes a moment relative to now when recent.
+func humanTime(unix int64, now time.Time) string {
+	t := time.Unix(unix, 0)
+	d := now.Sub(t)
+	switch {
+	case d < time.Minute:
+		return "刚刚"
+	case d < time.Hour:
+		return fmt.Sprintf("%d 分钟前", int(d.Minutes()))
+	case d < 24*time.Hour && t.Day() == now.Day():
+		return fmt.Sprintf("%d 小时前", int(d.Hours()))
+	case t.Year() == now.Year():
+		return t.Format("1月2日 15:04")
+	}
+	return t.Format("2006/01/02")
+}
+
+// humanSpeed writes bytes per second.
+func humanSpeed(bps float64) string {
+	if bps <= 0 {
+		return "—"
+	}
+	return humanSize(int64(bps)) + "/s"
+}

@@ -102,6 +102,7 @@ func (a *App) sidebar(c *ui.Context, t *ui.Theme, p *palette) {
 		})
 		ui.Spacer(c)
 		ui.Column(c).Padding(10).Gap(4).Children(func() {
+			a.profile(c, t, p)
 			a.navRow(c, t, p, navItem{"/settings", "settings", "设置"}, a.section() == "/settings")
 			collapse := ui.ButtonBase(c).Label("收起侧栏").Height(navRowHeight).Radius(9).PaddingX(12).Gap(12).Justify(ui.Start).
 				AlignItems(ui.Center).TextColor(t.TextMuted)
