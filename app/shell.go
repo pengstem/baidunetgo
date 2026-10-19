@@ -53,7 +53,10 @@ func (a *App) shell(c *ui.Context, t *ui.Theme, p *palette) {
 					a.placeholder(c, t, "cloud-download", "离线下载")
 				case r.Match("/recycle"):
 					r.Title("回收站")
-					a.placeholder(c, t, "trash-2", "回收站")
+					a.recyclePage(c, t, p)
+				case r.Match("/search"):
+					r.Title("搜索")
+					a.searchPage(c, t, p, a.router.Query("q"))
 				case r.Match("/settings"):
 					r.Title("设置")
 					a.placeholder(c, t, "settings", "设置")
@@ -188,8 +191,19 @@ func (a *App) titleBar(c *ui.Context, t *ui.Theme, p *palette) {
 			a.filesToolbar(c, t, p, dir)
 			return
 		}
+		if a.router.Path() == "/search" {
+			if iconButton(c, t, p, "arrow-left", "后退").Disabled(!a.router.CanGoBack()).Clicked() {
+				a.router.Back()
+			}
+		}
 		ui.Text(c, a.router.Title()).FontSize(17).FontWeight(650).SingleLine()
 		ui.Spacer(c)
+		switch a.section() {
+		case "/recycle":
+			a.recycleToolbar(c, t, p)
+		case "/search":
+			a.searchField(c, t, p)
+		}
 	})
 }
 

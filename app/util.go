@@ -6,6 +6,7 @@ import (
 	"io"
 	"math"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -66,6 +67,15 @@ func humanSpeed(bps float64) string {
 		return "—"
 	}
 	return humanSize(int64(bps)) + "/s"
+}
+
+// indexFold returns where q is in s, case aside, -1 if nowhere.
+func indexFold(s, q string) int {
+	i := strings.Index(strings.ToLower(s), strings.ToLower(q))
+	if i < 0 || i+len(q) > len(s) {
+		return -1
+	}
+	return i
 }
 
 func itoa(n int) string { return strconv.Itoa(n) }

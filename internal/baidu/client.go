@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/qjfoidnh/BaiduPCS-Go/baidupcs"
@@ -106,6 +107,9 @@ func parseCookies(s string) map[string]string {
 // Client is a signed-in netdisk session. Its methods are safe from any
 // goroutine.
 type Client struct {
+	mu    sync.Mutex
+	token string // bdstoken, once asked for
+
 	pcs   *baidupcs.BaiduPCS
 	http  *http.Client
 	creds Credentials

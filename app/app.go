@@ -33,6 +33,12 @@ type App struct {
 	thumbs      *thumbs
 
 	pv            *previewState
+	dlg           dialog
+	recycle       recycleState
+	recycleDirty  bool
+	found         searchState
+	query         string
+	copyText      string // to put on the clipboard in the next frame
 	settings      settings
 	pendingToasts []ui.Toast
 
@@ -105,7 +111,13 @@ func (a *App) View(c *ui.Context) {
 			Animation: &springPanel,
 			Enter:     &ui.Motion{Scale: 0.97},
 		}).Children(func() { a.shell(c, t, p) })
+		a.dialogs(c, t, p)
 		a.previewOverlay(c, t, p)
 	}
 	a.toasts(c, t, p)
+	if a.copyText != "" {
+		c.WriteClipboard(a.copyText)
+		a.toast("已复制路径", "success")
+		a.copyText = ""
+	}
 }

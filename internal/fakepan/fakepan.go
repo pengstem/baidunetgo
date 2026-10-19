@@ -39,6 +39,7 @@ type Server struct {
 
 	mu     sync.Mutex
 	nodes  map[string]*Node
+	trash  map[int64]*recycled
 	nextID int64
 }
 
@@ -54,6 +55,7 @@ func New() *Server {
 	mux.HandleFunc("/api/search", s.search)
 	mux.HandleFunc("/thumb", s.thumb)
 	mux.HandleFunc("/file", s.file)
+	s.opsRoutes(mux)
 	s.Server = httptest.NewServer(mux)
 	return s
 }
@@ -146,7 +148,7 @@ func writeJSON(w http.ResponseWriter, v any) {
 
 func (s *Server) loginStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"errno": 0, "login_info": map[string]any{
-		"uk": 42, "username": "演示用户", "photo_url": s.URL + "/thumb?id=7", "vip_type": 2, "is_svip": 1,
+		"uk": 42, "username": "演示用户", "bdstoken": "faketoken", "photo_url": s.URL + "/thumb?id=7", "vip_type": 2, "is_svip": 1,
 	}})
 }
 

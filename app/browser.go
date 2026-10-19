@@ -22,7 +22,8 @@ func (a *App) filesPage(c *ui.Context, t *ui.Theme, p *palette, dir string) {
 		sortFiles(l.files, a.order)
 		l.sorted = a.order
 	}
-	ui.Column(c).Key("files:" + dir).Grow(1).Children(func() {
+	a.fileActions(c, l)
+	ui.Box(c).Key("files:" + dir).Grow(1).Children(func() {
 		switch {
 		case !l.loaded && l.err != "":
 			emptyState(c, t, p, "triangle-alert", "无法读取这个文件夹", l.err, func() { a.load(l) })
@@ -35,6 +36,7 @@ func (a *App) filesPage(c *ui.Context, t *ui.Theme, p *palette, dir string) {
 		default:
 			a.fileList(c, t, p, l)
 		}
+		a.selectionBar(c, t, p, l)
 	})
 }
 
@@ -68,7 +70,10 @@ func (a *App) fileList(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 	list.Rows(func(row ui.ListRow) {
 		c := row.Context
 		f := &l.files[row.Index]
-		r := ui.Row(c).Height(rowHeight).PaddingX(12).Gap(12).AlignItems(ui.Center)
+		r := ui.Row(c).Height(rowHeight).PaddingX(12).Gap(12).AlignItems(ui.Center).Radius(t.Radius).TextColor(t.Text)
+		if row.Selected() {
+			r.Background(selectionFill(t, row.ListFocused()))
+		}
 		in := entering(r, l, row.Index, now)
 		if in < 1 {
 			r.Opacity(in).Translate(0, (1-in)*10)
@@ -130,7 +135,10 @@ func (a *App) fileGrid(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 	now := c.Now()
 	grid := ui.GridView(c, &l.grid, len(l.files), 148, 178, func(i int) {
 		f := &l.files[i]
-		tile := ui.Column(c).Fill().Padding(8).Gap(8).AlignItems(ui.Center).Radius(14)
+		tile := ui.Column(c).Fill().Padding(8).Gap(8).AlignItems(ui.Center).Radius(t.Radius).TextColor(t.Text).Background(t.Background)
+		if l.sel.Has(f.FsID) {
+			tile.Background(selectionFill(t, true))
+		}
 		in := entering(tile, l, i, now)
 		pose := ui.Pose{Y: (1 - in) * 14, Fade: 1 - in}
 		if tile.Hovered() && in == 1 {
@@ -191,12 +199,47 @@ func (a *App) fileIcon(c *ui.Context, t *ui.Theme, p *palette, f *baidu.File, si
 	})
 }
 
-// fileMenu gives a file's row its context menu.
+// fileMenu gives a file's row its context menu, acting on the files
+// chosen when the row is one of them, else on the row's.
 func (a *App) fileMenu(e ui.Element, l *listing, i int) {
 	f := l.files[i]
 	e.ContextMenu(func(m *ui.Menu) {
-		if m.Item("打开").Chosen() {
+		files := []baidu.File{f}
+		if l.sel.Has(f.FsID) {
+			files = l.chosen()
+		}
+		one := len(files) == 1
+		if one && m.Item("打开").Chosen() {
 			a.open(f)
+		}
+		if k := kindOf(&f); one && (k == kindVideo || k == kindAudio) {
+			if m.Item("用 mpv 播放").Chosen() {
+				a.playInMPV(f)
+			}
+		}
+		m.Separator()
+		if m.Item("下载").Chosen() {
+			a.download(files)
+		}
+		if m.Item("分享").Chosen() {
+			a.share(files)
+		}
+		m.Separator()
+		if one && m.Item("重命名").Shortcut(0, ui.KeyF2).Chosen() {
+			a.ask(dlgRename, l.dir, files)
+		}
+		if m.Item("移动到…").Chosen() {
+			a.ask(dlgMove, l.dir, files)
+		}
+		if m.Item("复制到…").Chosen() {
+			a.ask(dlgCopy, l.dir, files)
+		}
+		if one && m.Item("复制路径").Chosen() {
+			a.copyText = f.Path
+		}
+		m.Separator()
+		if m.Item("删除").Shortcut(0, ui.KeyDelete).Chosen() {
+			a.ask(dlgDelete, l.dir, files)
 		}
 	})
 }
@@ -259,6 +302,13 @@ func (a *App) filesToolbar(c *ui.Context, t *ui.Theme, p *palette, dir string) {
 	})
 	a.breadcrumbs(c, t, p, dir)
 	ui.Spacer(c)
+	a.searchField(c, t, p)
+	if iconButton(c, t, p, "folder-plus", "新建文件夹").Clicked() {
+		a.ask(dlgNewFolder, dir, nil)
+	}
+	if iconButton(c, t, p, "upload", "上传").Clicked() {
+		a.pickUpload(dir)
+	}
 	if iconButton(c, t, p, "refresh-cw", "刷新").Clicked() {
 		a.reload(dir)
 	}
@@ -300,3 +350,13 @@ func (a *App) viewSwitch(c *ui.Context, t *ui.Theme, p *palette) {
 
 // previewing reports whether the preview shows f.
 func (a *App) previewing(f *baidu.File) bool { return a.pv != nil && a.pv.file.FsID == f.FsID }
+
+// selectionFill is the soft tint of chosen rows, opaque so that it covers
+// the list's own accent fill.
+func selectionFill(t *ui.Theme, focused bool) ui.Color {
+	amount := float32(0.1)
+	if focused {
+		amount = 0.17
+	}
+	return t.Background.Mix(t.Accent, amount)
+}

@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	_ "github.com/egoist/mygo/locales/zh-Hans"
 	"github.com/egoist/mygo/ui"
 
 	"github.com/pengstem/baidunetgo/internal/baidu"
@@ -19,6 +20,7 @@ func signedIn(t *testing.T) (*App, *ui.Tester, *fakepan.Server) {
 	a.fake = true
 	go a.signInWith(baidu.OpenAt(baidu.Credentials{BDUSS: "fake", UID: 1}, srv.URL), false)
 	tt := ui.NewTester(a.View, 1180, 760)
+	tt.SetLocale("zh-Hans")
 	waitFor(t, tt, "照片")
 	return a, tt, srv
 }

@@ -6,12 +6,16 @@ import (
 	"log"
 
 	"github.com/egoist/mygo"
+	_ "github.com/egoist/mygo/locales/zh-Hans" // MyGo's own strings in Chinese
 	"github.com/egoist/mygo/ui"
 
 	"github.com/pengstem/baidunetgo/app"
 )
 
 func main() {
+	// The interface is written in Chinese: MyGo's own controls and menus
+	// speak it too.
+	mygo.App.SetLanguages("zh-Hans")
 	a := app.New()
 	mygo.App.WhenReady(func() {
 		win := mygo.NewWindow(mygo.WindowOptions{
