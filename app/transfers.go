@@ -339,7 +339,7 @@ func tabs(c *ui.Context, t *ui.Theme, p *palette, chosen *int, labels ...string)
 	})
 	seg.Track.Children(func() {
 		for i, label := range labels {
-			s := seg.Segment(i).Width(116).Center().Label(label)
+			s := seg.Segment(i).MinWidth(96).Grow(1).Basis(0).PaddingX(12).Center().Label(label)
 			color := t.TextMuted
 			if i == *chosen {
 				color = t.Text
@@ -352,6 +352,3 @@ func tabs(c *ui.Context, t *ui.Theme, p *palette, chosen *int, labels ...string)
 	})
 	return seg.Track
 }
-
-// share asks how to share files.
-func (a *App) share(files []baidu.File) { a.toast("分享功能即将到来", "") }

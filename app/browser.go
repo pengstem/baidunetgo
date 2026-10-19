@@ -257,7 +257,7 @@ func (a *App) fileMenu(e ui.Element, l *listing, i int) {
 			a.ask(dlgCopy, l.dir, files)
 		}
 		if one && m.Item("复制路径").Chosen() {
-			a.copyText = f.Path
+			a.copy(f.Path, "已复制路径")
 		}
 		m.Separator()
 		if m.Item("删除").Shortcut(0, ui.KeyDelete).Chosen() {

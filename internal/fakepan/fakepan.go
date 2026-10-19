@@ -37,10 +37,12 @@ type Node struct {
 type Server struct {
 	*httptest.Server
 
-	mu     sync.Mutex
-	nodes  map[string]*Node
-	trash  map[int64]*recycled
-	nextID int64
+	mu       sync.Mutex
+	nodes    map[string]*Node
+	trash    map[int64]*recycled
+	shares   []*share
+	offlines []*offline
+	nextID   int64
 }
 
 // New starts a fake netdisk holding a few sample folders and files.
@@ -56,6 +58,7 @@ func New() *Server {
 	mux.HandleFunc("/thumb", s.thumb)
 	mux.HandleFunc("/file", s.file)
 	s.opsRoutes(mux)
+	s.shareRoutes(mux)
 	s.Server = httptest.NewServer(mux)
 	return s
 }

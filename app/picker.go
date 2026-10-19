@@ -68,50 +68,11 @@ func (a *App) pickerDialog(c *ui.Context, t *ui.Theme, p *palette) {
 		verb = "复制"
 	}
 	dialogTitle(c, t, verb+countLabel(d.files)+"到…", "")
-	ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
-		up := iconButton(c, t, p, "arrow-left", "上一级").Disabled(pk.dir == "/")
-		if up.Clicked() {
-			pk.dir = path.Dir(pk.dir)
-		}
-		ui.Icon(c, icon("folder")).FontSize(16).TextColor(p.Folder)
-		ui.Text(c, dirLabel(pk.dir)).FontWeight(600).SingleLine().ContentTransition(ui.ContentTransition{})
-	})
-	box := ui.Column(c).Height(260).Radius(12).Background(t.Surface).Clip()
-	box.Children(func() {
-		folders, ok := a.pickerFolders(pk, pk.dir)
-		moving := map[string]bool{}
-		for _, f := range d.files {
-			moving[f.Path] = true
-		}
-		switch {
-		case !ok:
-			ui.Column(c).Grow(1).Center().Children(func() { ui.Spinner(c).Label("加载中") })
-		case len(folders) == 0:
-			ui.Column(c).Grow(1).Center().Children(func() {
-				ui.Text(c, "没有子文件夹").TextColor(t.TextMuted)
-			})
-		default:
-			ui.List(c, &pk.list, len(folders), func(i int) {
-				f := folders[i]
-				skip := moving[f.Path]
-				row := ui.ButtonBase(c.Key(f.Path)).Label("打开 " + f.Name).Height(40).PaddingX(12).Gap(10).Justify(ui.Start).
-					AlignItems(ui.Center).Disabled(skip)
-				if skip {
-					row.Opacity(0.4)
-				} else if row.Hovered() {
-					row.Background(p.Hover)
-				}
-				row.Children(func() {
-					ui.Icon(c, icon("folder")).FontSize(17).TextColor(p.Folder)
-					ui.Text(c, f.Name).Grow(1).SingleLine()
-					ui.Icon(c, icon("chevron-right")).FontSize(14).TextColor(t.TextMuted)
-				})
-				if row.Clicked() {
-					pk.dir = f.Path
-				}
-			}).Grow(1).Padding(4)
-		}
-	})
+	moving := map[string]bool{}
+	for _, f := range d.files {
+		moving[f.Path] = true
+	}
+	a.folderChooser(c, t, p, pk, 260, moving)
 	// A folder cannot go into itself, nor stay where it is when moved.
 	invalid := false
 	for _, f := range d.files {
@@ -132,4 +93,49 @@ func (a *App) pickerDialog(c *ui.Context, t *ui.Theme, p *palette) {
 		}
 		a.run(op, []string{from, to}, "已"+verb+"到「"+dirLabel(to)+"」", nil)
 	}
+}
+
+// folderChooser lets the user go through the netdisk's folders to choose
+// one, pk.dir; skip names folders that cannot be chosen.
+func (a *App) folderChooser(c *ui.Context, t *ui.Theme, p *palette, pk *picker, height float32, skip map[string]bool) {
+	ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
+		up := iconButton(c, t, p, "arrow-left", "上一级").Disabled(pk.dir == "/")
+		if up.Clicked() {
+			pk.dir = path.Dir(pk.dir)
+		}
+		ui.Icon(c, icon("folder")).FontSize(16).TextColor(p.Folder)
+		ui.Text(c, dirLabel(pk.dir)).FontWeight(600).SingleLine().ContentTransition(ui.ContentTransition{})
+	})
+	box := ui.Column(c).Height(height).Radius(12).Background(t.Surface).Clip()
+	box.Children(func() {
+		folders, ok := a.pickerFolders(pk, pk.dir)
+		switch {
+		case !ok:
+			ui.Column(c).Grow(1).Center().Children(func() { ui.Spinner(c).Label("加载中") })
+		case len(folders) == 0:
+			ui.Column(c).Grow(1).Center().Children(func() {
+				ui.Text(c, "没有子文件夹").TextColor(t.TextMuted)
+			})
+		default:
+			ui.List(c, &pk.list, len(folders), func(i int) {
+				f := folders[i]
+				off := skip[f.Path]
+				row := ui.ButtonBase(c.Key(f.Path)).Label("打开 " + f.Name).Height(40).PaddingX(12).Gap(10).Justify(ui.Start).
+					AlignItems(ui.Center).Disabled(off)
+				if off {
+					row.Opacity(0.4)
+				} else if row.Hovered() {
+					row.Background(p.Hover)
+				}
+				row.Children(func() {
+					ui.Icon(c, icon("folder")).FontSize(17).TextColor(p.Folder)
+					ui.Text(c, f.Name).Grow(1).SingleLine()
+					ui.Icon(c, icon("chevron-right")).FontSize(14).TextColor(t.TextMuted)
+				})
+				if row.Clicked() {
+					pk.dir = f.Path
+				}
+			}).Grow(1).Padding(4)
+		}
+	})
 }

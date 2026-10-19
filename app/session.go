@@ -156,5 +156,6 @@ func (a *App) onSignedOut() {
 	a.login.stopQR()
 	a.stopThumbs()
 	a.stopTransfers()
+	a.shares, a.offline, a.recycle = sharesState{}, offlineState{}, recycleState{}
 	a.listings = nil
 }

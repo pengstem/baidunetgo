@@ -40,6 +40,11 @@ type App struct {
 	found         searchState
 	xfer          *transfer.Manager
 	transfers     transfersState
+	shareForm     shareForm
+	shares        sharesState
+	sharesDirty   bool
+	offline       offlineState
+	copied        string // the toast after copying
 	query         string
 	copyText      string // to put on the clipboard in the next frame
 	settings      settings
@@ -70,6 +75,9 @@ func (a *App) Attach(win *mygo.Window) {
 	a.settings = loadSettings()
 	a.boot()
 }
+
+// copy puts text on the clipboard in the next frame, saying msg.
+func (a *App) copy(text, msg string) { a.copyText, a.copied = text, msg }
 
 // Shutdown saves what must outlast the app, as it quits.
 func (a *App) Shutdown() {
@@ -127,7 +135,11 @@ func (a *App) View(c *ui.Context) {
 	a.toasts(c, t, p)
 	if a.copyText != "" {
 		c.WriteClipboard(a.copyText)
-		a.toast("已复制路径", "success")
-		a.copyText = ""
+		msg := a.copied
+		if msg == "" {
+			msg = "已复制"
+		}
+		a.toast(msg, "success")
+		a.copyText, a.copied = "", ""
 	}
 }

@@ -46,11 +46,11 @@ func (a *App) shell(c *ui.Context, t *ui.Theme, p *palette) {
 					r.Title("传输")
 					a.transfersPage(c, t, p)
 				case r.Match("/shares"):
-					r.Title("分享")
-					a.placeholder(c, t, "share-2", "分享")
+					r.Title("我的分享")
+					a.sharesPage(c, t, p)
 				case r.Match("/offline"):
 					r.Title("离线下载")
-					a.placeholder(c, t, "cloud-download", "离线下载")
+					a.offlinePage(c, t, p)
 				case r.Match("/recycle"):
 					r.Title("回收站")
 					a.recyclePage(c, t, p)
@@ -217,6 +217,10 @@ func (a *App) titleBar(c *ui.Context, t *ui.Theme, p *palette) {
 			a.recycleToolbar(c, t, p)
 		case "/transfers":
 			a.transfersToolbar(c, t, p)
+		case "/shares":
+			a.sharesToolbar(c, t, p)
+		case "/offline":
+			a.offlineToolbar(c, t, p)
 		case "/search":
 			a.searchField(c, t, p)
 		}

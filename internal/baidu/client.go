@@ -167,6 +167,9 @@ type panError struct {
 	Errno   int    `json:"errno"`
 	ErrMsg  string `json:"errmsg"`
 	ShowMsg string `json:"show_msg"`
+	// The PCS-style services (cloud_dl) answer with these instead.
+	ErrorCode int    `json:"error_code"`
+	ErrorMsg  string `json:"error_msg"`
 }
 
 // APIError is an error the netdisk answered with.
@@ -253,6 +256,9 @@ func (c *Client) doJSON(ctx context.Context, op, method, path string, q url.Valu
 	var pe panError
 	if err := json.Unmarshal(data, &pe); err != nil {
 		return fmt.Errorf("%s失败：服务器返回 %s", op, resp.Status)
+	}
+	if pe.Errno == 0 && pe.ErrorCode != 0 {
+		pe.Errno, pe.ShowMsg = pe.ErrorCode, pe.ErrorMsg
 	}
 	if pe.Errno != 0 {
 		if pe.Errno == -6 || pe.Errno == -4 || pe.Errno == 111 {

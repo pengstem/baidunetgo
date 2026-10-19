@@ -24,6 +24,9 @@ const (
 	dlgDelete
 	dlgMove
 	dlgCopy
+	dlgShare
+	dlgSaveLink
+	dlgOffline
 )
 
 // dialog is the dialog over the window, if any.
@@ -155,6 +158,12 @@ func (a *App) dialogs(c *ui.Context, t *ui.Theme, p *palette) {
 			a.deleteDialog(c, t, p)
 		case dlgMove, dlgCopy:
 			a.pickerDialog(c, t, p)
+		case dlgShare:
+			a.shareDialog(c, t, p)
+		case dlgSaveLink:
+			a.saveLinkDialog(c, t, p)
+		case dlgOffline:
+			a.offlineDialog(c, t, p)
 		}
 	})
 	if open && !d.open && d.busy {
@@ -191,7 +200,7 @@ func (a *App) dialogButtons(c *ui.Context, t *ui.Theme, p *palette, label string
 			d.open = false
 		}
 		b := pill(c, t, p, "", label, true).Disabled(disabled || d.busy)
-		if d.kind != dlgNewFolder && d.kind != dlgRename {
+		if d.kind == dlgDelete || d.kind == dlgMove || d.kind == dlgCopy || d.kind == dlgShare {
 			b.AutoFocus() // Enter presses it
 		}
 		if danger {
