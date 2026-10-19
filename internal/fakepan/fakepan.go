@@ -98,12 +98,13 @@ func (s *Server) seed() {
 	for i, name := range []string{"星际穿越.mkv", "千与千寻.mp4", "旅行 vlog 2026.mov"} {
 		s.add(Node{Path: "/电影/" + name, Category: 1, Size: int64(1+i) * 1_800_000_000})
 	}
+	s.add(Node{Path: "/音乐/和弦.wav", Category: 2, Data: SampleWAV(6)})
 	for _, name := range []string{"晴天.flac", "夜曲.mp3", "Clair de Lune.ogg"} {
 		s.add(Node{Path: "/音乐/" + name, Category: 2, Size: 9_400_000})
 	}
 	s.add(Node{Path: "/文档/读我.txt", Category: 4, Data: []byte(text)})
 	s.add(Node{Path: "/文档/旅行计划.md", Category: 4, Data: []byte(md)})
-	s.add(Node{Path: "/文档/年度报告.pdf", Category: 4, Size: 2_400_000})
+	s.add(Node{Path: "/文档/年度报告.pdf", Category: 4, Data: SamplePDF(4)})
 	s.add(Node{Path: "/文档/预算.xlsx", Category: 4, Size: 84_000})
 	s.add(Node{Path: "/代码/main.go", Category: 6, Data: []byte(code)})
 	s.add(Node{Path: "/代码/项目备份.zip", Category: 6, Size: 380_000_000})

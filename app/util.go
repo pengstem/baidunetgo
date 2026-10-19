@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"strconv"
 	"time"
 )
 
@@ -66,3 +67,21 @@ func humanSpeed(bps float64) string {
 	}
 	return humanSize(int64(bps)) + "/s"
 }
+
+func itoa(n int) string { return strconv.Itoa(n) }
+
+func pad2(n int) string {
+	if n < 10 {
+		return "0" + strconv.Itoa(n)
+	}
+	return strconv.Itoa(n)
+}
+
+func abs32(x float32) float32 {
+	if x < 0 {
+		return -x
+	}
+	return x
+}
+
+func clamp(x, lo, hi float32) float32 { return max(lo, min(x, hi)) }

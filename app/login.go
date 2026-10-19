@@ -5,6 +5,7 @@ import (
 	"math"
 	"time"
 
+	"github.com/egoist/mygo/plugins/glass"
 	"github.com/egoist/mygo/ui"
 
 	"github.com/pengstem/baidunetgo/internal/baidu"
@@ -127,7 +128,7 @@ func (a *App) loginView(c *ui.Context, t *ui.Theme, p *palette) {
 
 		ui.Column(c).Absolute().Top(0).Left(0).Right(0).Bottom(0).Center().Children(func() {
 			card := ui.Column(c).Key("login-card").Width(392).Padding(34, 34, 28).Gap(22).Radius(22).
-				Background(p.Card.Alpha(0.86)).Border(1, p.Hairline).
+				Material(glass.Glass{}).
 				Shadow(0, 24, 60, -12, p.Shadow).Shadow(0, 2, 6, 0, p.Shadow.Alpha(0.06)).
 				AlignItems(ui.Center).Transition(ui.ElementTransition{
 				Animation: &springPanel, Size: true,

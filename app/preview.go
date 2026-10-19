@@ -1,6 +1,716 @@
 package app
 
-import "github.com/pengstem/baidunetgo/internal/baidu"
+import (
+	"context"
+	"errors"
+	"path"
+	"strings"
+	"time"
+	"unicode/utf8"
 
-// openPreview shows a file's content.
-func (a *App) openPreview(f baidu.File) {}
+	"github.com/egoist/mygo/audio"
+	_ "github.com/egoist/mygo/audio/mp3"
+	_ "github.com/egoist/mygo/audio/vorbis"
+	"github.com/egoist/mygo/plugins/glass"
+	"github.com/egoist/mygo/ui"
+	"github.com/egoist/mygo/ui/editor"
+	"golang.org/x/text/encoding/simplifiedchinese"
+
+	"github.com/pengstem/baidunetgo/internal/baidu"
+	"github.com/pengstem/baidunetgo/internal/pdf"
+	"github.com/pengstem/baidunetgo/internal/player"
+	"github.com/pengstem/baidunetgo/internal/remote"
+)
+
+// Preview limits: files larger than these are not loaded into memory.
+var (
+	imageLimit int64 = 50 << 20
+	textLimit  int64 = 8 << 20
+	pdfLimit   int64 = 200 << 20
+)
+
+// thumbMatch ties a file's thumbnail to its picture in the preview, which
+// grows from it and shrinks back to it.
+type thumbMatch struct{ id int64 }
+
+// previewState is the file being previewed.
+type previewState struct {
+	file   baidu.File
+	kind   kind
+	group  []baidu.File // the pictures beside it, for the arrows
+	cancel context.CancelFunc
+
+	loading  bool
+	progress float32
+	err      string
+
+	thumb   *ui.Bitmap
+	bmp     *ui.Bitmap
+	zoom    float32
+	pan     ui.Point
+	dismiss ui.Point
+
+	buf      *editor.Buffer
+	ed       editor.State
+	markdown string
+	source   bool // show a Markdown file's source
+
+	doc       *pdf.Doc
+	pages     []*ui.Bitmap
+	rendering map[int]bool
+	pageList  ui.ListState
+
+	player *audio.Player
+	stream *remote.File
+}
+
+func (pv *previewState) close() {
+	if pv.cancel != nil {
+		pv.cancel()
+	}
+	if pv.player != nil {
+		pv.player.Close()
+	}
+	if pv.doc != nil {
+		doc := pv.doc
+		go doc.Close()
+	}
+}
+
+// openPreview shows a file's content: in the overlay for what the app
+// shows itself, in mpv for video and audio it does not play.
+func (a *App) openPreview(f baidu.File) {
+	k := kindOf(&f)
+	switch {
+	case k == kindVideo:
+		a.playInMPV(f)
+		return
+	case k == kindAudio && !inAppAudio(f.Name):
+		a.playInMPV(f)
+		return
+	}
+	if a.pv != nil {
+		a.pv.close()
+	}
+	pv := &previewState{file: f, kind: k, zoom: 1}
+	if k == kindImage {
+		if l := a.listings[path.Dir(f.Path)]; l != nil {
+			for _, g := range l.files {
+				if kindOf(&g) == kindImage {
+					pv.group = append(pv.group, g)
+				}
+			}
+		}
+		if f.Thumb != "" && a.thumbs != nil {
+			if e := a.thumbs.entries[f.Thumb]; e != nil {
+				pv.thumb = e.bmp
+			}
+		}
+	}
+	a.pv = pv
+	a.loadPreview(pv)
+}
+
+func inAppAudio(name string) bool {
+	switch strings.ToLower(path.Ext(name)) {
+	case ".mp3", ".ogg", ".oga", ".wav":
+		return true
+	}
+	return false
+}
+
+// closePreview closes the overlay.
+func (a *App) closePreview() {
+	if a.pv != nil {
+		a.pv.close()
+		a.pv = nil
+	}
+}
+
+// loadPreview reads the file into memory and decodes it, on goroutines.
+func (a *App) loadPreview(pv *previewState) {
+	s := a.sess
+	if s == nil {
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	pv.cancel = cancel
+	var limit int64
+	switch pv.kind {
+	case kindImage:
+		limit = imageLimit
+	case kindText, kindCode, kindMarkdown:
+		limit = textLimit
+	case kindPDF:
+		limit = pdfLimit
+		pdf.Warm()
+	case kindAudio:
+		a.startAudio(ctx, pv)
+		return
+	default:
+		return // shows what it is, with nothing to load
+	}
+	pv.loading = true
+	f := pv.file
+	go func() {
+		last := time.Now()
+		data, err := remote.ReadAll(ctx, s.client, baidu.Expired, f.Path, f.Size, limit, func(done int64) {
+			if time.Since(last) < 50*time.Millisecond || f.Size == 0 {
+				return
+			}
+			last = time.Now()
+			frac := float32(float64(done) / float64(f.Size))
+			a.update(func() { pv.progress = frac })
+		})
+		if ctx.Err() != nil {
+			return
+		}
+		if err != nil {
+			a.update(func() { pv.loading, pv.err = false, previewError(err) })
+			return
+		}
+		switch pv.kind {
+		case kindImage:
+			bmp, err := ui.DecodeBitmap(data)
+			a.update(func() {
+				pv.loading, pv.progress = false, 1
+				if err != nil {
+					pv.err = "这种图片格式无法预览"
+					return
+				}
+				pv.bmp = bmp
+			})
+		case kindPDF:
+			doc, err := pdf.Open(ctx, data)
+			if ctx.Err() != nil {
+				if doc != nil {
+					doc.Close()
+				}
+				return
+			}
+			a.update(func() {
+				pv.loading = false
+				if err != nil {
+					pv.err = err.Error()
+					return
+				}
+				pv.doc = doc
+				pv.pages = make([]*ui.Bitmap, len(doc.Pages))
+				pv.rendering = map[int]bool{}
+			})
+		default:
+			text := decodeText(data)
+			a.update(func() {
+				pv.loading = false
+				if pv.kind == kindMarkdown {
+					pv.markdown = text
+				}
+				pv.buf = editor.NewBuffer(text)
+				pv.buf.SetLanguage(editor.LanguageFor(pv.file.Name))
+				pv.ed = editor.State{Buffer: pv.buf, ReadOnly: true, SoftWrap: pv.kind != kindCode, NoScrollPastEnd: true}
+			})
+		}
+	}()
+}
+
+func previewError(err error) string {
+	if errors.Is(err, remote.ErrTooLarge) {
+		return "文件太大，不在内存中预览。可以下载后查看。"
+	}
+	return err.Error()
+}
+
+// decodeText reads text as UTF-8, else as GB18030, as Chinese Windows
+// writes it.
+func decodeText(data []byte) string {
+	data = []byte(strings.TrimPrefix(string(data), "\ufeff"))
+	if utf8.Valid(data) {
+		return string(data)
+	}
+	if out, err := simplifiedchinese.GB18030.NewDecoder().Bytes(data); err == nil {
+		return string(out)
+	}
+	return strings.ToValidUTF8(string(data), "�")
+}
+
+// startAudio plays an audio file as it streams into memory.
+func (a *App) startAudio(ctx context.Context, pv *previewState) {
+	s := a.sess
+	pv.loading = true
+	f := pv.file
+	go func() {
+		stream := remote.Open(ctx, s.client, baidu.Expired, f.Path, f.Size)
+		p, err := audio.OpenStream(stream)
+		if ctx.Err() != nil {
+			if p != nil {
+				p.Close()
+			}
+			return
+		}
+		a.update(func() {
+			pv.loading = false
+			if err != nil {
+				pv.err = "无法播放：" + err.Error()
+				return
+			}
+			pv.player, pv.stream = p, stream
+			p.Play()
+		})
+	}()
+}
+
+// playInMPV streams a file in mpv.
+func (a *App) playInMPV(f baidu.File) {
+	s := a.sess
+	if s == nil {
+		return
+	}
+	mpv, err := player.Find(a.settings.MPV)
+	if err != nil {
+		a.toast(err.Error(), "error")
+		return
+	}
+	a.toast("正在用 mpv 播放「"+f.Name+"」", "")
+	go func() {
+		u, err := s.client.DownloadURL(context.Background(), f.Path)
+		if err == nil {
+			err = player.Play(mpv, u, f.Name, s.client.Headers())
+		}
+		if err != nil {
+			a.update(func() { a.toast("播放失败："+err.Error(), "error") })
+		}
+	}()
+}
+
+// step shows the picture before (-1) or after (+1) in its folder.
+func (a *App) step(d int) {
+	pv := a.pv
+	if pv == nil || len(pv.group) < 2 {
+		return
+	}
+	i := (pv.groupIndex() + d + len(pv.group)) % len(pv.group)
+	a.openPreview(pv.group[i])
+}
+
+// previewOverlay shows the file being previewed over the window.
+func (a *App) previewOverlay(c *ui.Context, t *ui.Theme, p *palette) {
+	ui.Overlay(c, func() {
+		pv := a.pv
+		if pv == nil {
+			return
+		}
+		root := ui.Box(c).Key("preview").Absolute().Top(0).Left(0).Right(0).Bottom(0).Modal().
+			Transition(ui.ElementTransition{Animation: &fadeQuick, Enter: &ui.Motion{Opacity: 0}, Exit: &ui.Motion{Opacity: 0}})
+		root.Children(func() {
+			back := ui.Box(c).Absolute().Top(0).Left(0).Right(0).Bottom(0).Material(glass.Blur{Radius: 22})
+			back.Children(func() {
+				ui.Box(c).Fill().Background(previewScrim(t)).PassThrough()
+			})
+			drag := pv.dismiss.Y
+			if drag < 0 {
+				drag = -drag
+			}
+			back.Opacity(1 - min(drag/420, 0.7))
+			if back.Clicked() {
+				a.closePreview()
+				return
+			}
+			ui.Column(c).Absolute().Top(0).Left(0).Right(0).Bottom(0).Children(func() {
+				a.previewBar(c, t, p, pv)
+				ui.Box(c).Grow(1).Center().Padding(0, 24, 24).Children(func() {
+					a.previewBody(c, t, p, pv)
+				})
+			})
+			if root.OverlayShortcut(0, ui.KeyEscape) {
+				a.closePreview()
+			}
+			if pv.kind == kindImage {
+				if root.OverlayShortcut(0, ui.KeyLeft) {
+					a.step(-1)
+				}
+				if root.OverlayShortcut(0, ui.KeyRight) {
+					a.step(1)
+				}
+			}
+		})
+	})
+}
+
+func previewScrim(t *ui.Theme) ui.Color {
+	if t.Dark {
+		return ui.RGBA(6, 7, 10, 0.86)
+	}
+	return ui.RGBA(18, 20, 28, 0.78)
+}
+
+// previewBar is the file's name and actions above it.
+func (a *App) previewBar(c *ui.Context, t *ui.Theme, p *palette, pv *previewState) {
+	bar := c.TitleBar()
+	white := ui.Hex("#f4f5f8")
+	ui.Row(c).Height(max(bar.Height, titleBarMin) + 8).PaddingStart(max(bar.Left, 0) + 20).PaddingEnd(bar.Right + 16).
+		Gap(12).AlignItems(ui.Center).TextColor(white).DragWindow().
+		Transition(ui.ElementTransition{Animation: &springSoft, Enter: &ui.Motion{Y: -12, Opacity: 0}}).Children(func() {
+		lk := pv.kind.look(p)
+		ui.Box(c).Size(30, 30).Radius(8).Center().Background(lk.color.Alpha(0.25)).Children(func() {
+			ui.Icon(c, icon(lk.icon)).FontSize(16).TextColor(lk.color)
+		})
+		ui.Column(c).Gap(1).Shrink(1).Children(func() {
+			ui.Text(c, pv.file.Name).FontWeight(600).SingleLine()
+			meta := lk.label + " · " + humanSize(pv.file.Size)
+			if pv.doc != nil {
+				first, _ := pv.pageList.Visible()
+				meta += " · 第 " + itoa(first+1) + " / " + itoa(len(pv.doc.Pages)) + " 页"
+			}
+			if pv.bmp != nil {
+				w, h := pv.bmp.Size()
+				meta += " · " + itoa(w) + "×" + itoa(h)
+			}
+			if n := len(pv.group); n > 1 {
+				meta += " · " + itoa(pv.groupIndex()+1) + " / " + itoa(n)
+			}
+			ui.Text(c, meta).FontSize(t.Rem(0.82)).TextColor(white.Alpha(0.6)).SingleLine()
+		})
+		ui.Spacer(c)
+		if pv.kind == kindImage && pv.bmp != nil {
+			if glassButton(c, "zoom-out", "缩小").Clicked() {
+				pv.zoom = max(pv.zoom/1.5, 1)
+				if pv.zoom == 1 {
+					pv.pan = ui.Point{}
+				}
+			}
+			ui.Text(c, itoa(int(pv.zoom*100+0.5))+"%").Width(48).TextAlign(ui.Center).FontFeatures("tnum").
+				TextColor(white.Alpha(0.75)).ContentTransition(ui.ContentTransition{Numeric: true})
+			if glassButton(c, "zoom-in", "放大").Clicked() {
+				pv.zoom = min(pv.zoom*1.5, 8)
+			}
+		}
+		if pv.kind == kindMarkdown && pv.buf != nil {
+			label := "源码"
+			if pv.source {
+				label = "预览"
+			}
+			if glassButton(c, "file-code", label).Clicked() {
+				pv.source = !pv.source
+			}
+		}
+		if pv.kind == kindAudio || pv.kind == kindVideo {
+			if glassButton(c, "external-link", "在 mpv 中播放").Clicked() {
+				if pv.player != nil {
+					pv.player.Pause()
+				}
+				a.playInMPV(pv.file)
+			}
+		}
+		if glassButton(c, "download", "下载").Clicked() {
+			a.download([]baidu.File{pv.file})
+		}
+		if glassButton(c, "x", "关闭").Clicked() {
+			a.closePreview()
+		}
+	})
+}
+
+// glassButton is a round icon button over the dark preview backdrop.
+func glassButton(c *ui.Context, ic, label string) ui.Element {
+	b := ui.ButtonBase(c).Label(label).Tooltip(label).Size(34, 34).Radius(17).Center().
+		TextColor(ui.Hex("#f4f5f8"))
+	bg := ui.RGBA(255, 255, 255, 0.08)
+	if b.Pressed() {
+		bg = ui.RGBA(255, 255, 255, 0.22)
+	} else if b.Hovered() {
+		bg = ui.RGBA(255, 255, 255, 0.15)
+	}
+	b.Background(b.AnimateColor("bg", bg, fadeQuick))
+	b.Children(func() { ui.Icon(c, icon(ic)).FontSize(16) })
+	return b
+}
+
+func (a *App) previewBody(c *ui.Context, t *ui.Theme, p *palette, pv *previewState) {
+	switch {
+	case pv.err != "":
+		a.previewMessage(c, t, p, pv, "triangle-alert", pv.err)
+	case pv.kind == kindImage:
+		a.imageViewer(c, t, p, pv)
+	case pv.loading:
+		a.previewLoading(c, t, p, pv)
+	case pv.kind == kindPDF && pv.doc != nil:
+		a.pdfViewer(c, t, p, pv)
+	case pv.kind == kindAudio && pv.player != nil:
+		a.audioPlayer(c, t, p, pv)
+	case pv.buf != nil:
+		a.textViewer(c, t, p, pv)
+	default:
+		a.previewMessage(c, t, p, pv, pv.kind.look(p).icon, "这种文件不能在应用内预览")
+	}
+}
+
+// previewLoading shows the bytes arriving.
+func (a *App) previewLoading(c *ui.Context, t *ui.Theme, p *palette, pv *previewState) {
+	ui.Column(c).Width(280).Gap(12).AlignItems(ui.Center).TextColor(ui.Hex("#f4f5f8")).Transition(popIn).Children(func() {
+		lk := pv.kind.look(p)
+		ic := ui.Icon(c, icon(lk.icon)).FontSize(40).TextColor(lk.color)
+		ic.Opacity(0.6 + 0.4*ic.Loop("pulse", 1200*time.Millisecond, ui.Bounce(ui.EaseInOut)))
+		track := ui.Box(c).FillWidth().Height(4).Radius(2).Background(ui.RGBA(255, 255, 255, 0.12)).Clip()
+		track.Children(func() {
+			bar := ui.Box(c).Height(4).Radius(2).Background(t.Accent)
+			bar.WidthPercent(bar.AnimateTo("p", pv.progress*100, springSoft))
+		})
+		ui.Text(c, "正在载入到内存 · "+humanSize(int64(float64(pv.progress)*float64(pv.file.Size)))+" / "+humanSize(pv.file.Size)).
+			FontSize(t.Rem(0.86)).TextColor(ui.RGBA(244, 245, 248, 0.6)).FontFeatures("tnum")
+	})
+}
+
+func (a *App) previewMessage(c *ui.Context, t *ui.Theme, p *palette, pv *previewState, ic, msg string) {
+	ui.Column(c).Width(360).Padding(28).Gap(14).Radius(20).AlignItems(ui.Center).Background(p.Card).
+		Shadow(0, 24, 60, -12, ui.RGBA(0, 0, 0, 0.5)).Transition(popIn).Children(func() {
+		lk := pv.kind.look(p)
+		ui.Box(c).Size(64, 64).Radius(18).Center().Background(lk.color.Alpha(0.14)).Children(func() {
+			ui.Icon(c, icon(ic)).FontSize(30).TextColor(lk.color)
+		})
+		ui.Text(c, pv.file.Name).FontWeight(600).TextAlign(ui.Center).MaxLines(2)
+		ui.Text(c, msg).TextColor(t.TextMuted).TextAlign(ui.Center)
+		ui.Row(c).Gap(8).Margin(6, 0, 0).Children(func() {
+			if pill(c, t, p, "download", "下载到本地", true).Clicked() {
+				a.download([]baidu.File{pv.file})
+			}
+		})
+	})
+}
+
+// imageViewer shows a picture, grown from its thumbnail, zoomed with the
+// wheel and the buttons, and dragged down to close.
+func (a *App) imageViewer(c *ui.Context, t *ui.Theme, p *palette, pv *previewState) {
+	src := pv.bmp
+	if src == nil {
+		src = pv.thumb
+	}
+	ww, wh := c.Size()
+	availW, availH := ww-48, wh-titleBarMin-8-24-40
+	box := ui.Box(c).Fill().Center()
+	box.HandleInput(func(ev ui.InputEvent) bool {
+		if ev.Kind != ui.InputScroll || pv.bmp == nil {
+			return false
+		}
+		f := float32(1.0015)
+		if ev.Precise {
+			f = 1.004
+		}
+		z := pv.zoom
+		for range int(abs32(ev.DY)) {
+			if ev.DY < 0 {
+				z *= f
+			} else {
+				z /= f
+			}
+		}
+		pv.zoom = clamp(z, 1, 8)
+		if pv.zoom == 1 {
+			pv.pan = ui.Point{}
+		}
+		return true
+	})
+	box.Children(func() {
+		if src == nil {
+			a.previewLoading(c, t, p, pv)
+			return
+		}
+		iw, ih := src.Size()
+		if pv.bmp == nil && pv.thumb != nil {
+			// Size the thumbnail as the picture will be: the netdisk's are
+			// of its proportions.
+			iw, ih = iw*8, ih*8
+		}
+		scale := min(availW/float32(iw), availH/float32(ih), 1)
+		if pv.bmp == nil {
+			scale = min(availW/float32(iw), availH/float32(ih))
+		}
+		w, h := float32(iw)*scale, float32(ih)*scale
+		z := box.AnimateTo("zoom", pv.zoom, springSoft)
+		img := ui.Image(c, src).Size(w*z, h*z).Fit(ui.Contain).Radius(10).
+			Shadow(0, 30, 80, -20, ui.RGBA(0, 0, 0, 0.6)).
+			ContentTransition(ui.ContentTransition{}).
+			Transition(ui.ElementTransition{Match: thumbMatch{pv.file.FsID}, Animation: &springPanel})
+		if pv.zoom > 1 {
+			img.Draggable(&pv.pan, ui.DraggableOptions{
+				Bounds: &ui.Rect{X: -w * z / 2, Y: -h * z / 2, W: w * z, H: h * z},
+			}).Cursor(ui.CursorGrab)
+		} else {
+			img.Draggable(&pv.dismiss, ui.DraggableOptions{
+				Axis: ui.Vertical,
+				Snap: func(pt ui.Point) ui.Point {
+					if pt.Y > 160 || pt.Y < -160 {
+						return ui.Point{Y: pt.Y * 3}
+					}
+					return ui.Point{}
+				},
+			})
+			if pv.dismiss.Y != 0 && !img.Transitioning() && !img.Dragging() {
+				pv.dismiss = ui.Point{}
+				a.closePreview()
+				return
+			}
+		}
+		if img.DoubleClicked() {
+			if pv.zoom > 1 {
+				pv.zoom, pv.pan = 1, ui.Point{}
+			} else {
+				pv.zoom = 2.5
+			}
+		}
+		if pv.loading && pv.thumb != nil {
+			ui.Box(c).Absolute().Bottom(0).Left(0).Right(0).Height(3).Children(func() {
+				bar := ui.Box(c).Height(3).Background(t.Accent)
+				bar.WidthPercent(bar.AnimateTo("p", pv.progress*100, springSoft))
+			})
+		}
+	})
+	if len(pv.group) > 1 && pv.zoom == 1 {
+		for _, side := range []int{-1, 1} {
+			b := glassButton(c.Key(side), map[int]string{-1: "chevron-left", 1: "chevron-right"}[side], map[int]string{-1: "上一张", 1: "下一张"}[side]).
+				Size(44, 44).Radius(22).Absolute().Top(0).Bottom(0).Margin(ui.Auto, 0)
+			if side < 0 {
+				b.Left(8)
+			} else {
+				b.Right(8)
+			}
+			if b.Clicked() {
+				a.step(side)
+			}
+		}
+	}
+}
+
+// textViewer shows text and code, read-only with highlighting, and
+// Markdown rendered.
+func (a *App) textViewer(c *ui.Context, t *ui.Theme, p *palette, pv *previewState) {
+	panel := ui.Column(c).Fill().MaxWidth(1040).Radius(16).Background(t.Background).Clip().
+		Border(1, p.Hairline).Shadow(0, 30, 80, -20, ui.RGBA(0, 0, 0, 0.55)).
+		Transition(ui.ElementTransition{Animation: &springPanel, Enter: &ui.Motion{Y: 30, Scale: 0.97, Opacity: 0}})
+	panel.Children(func() {
+		if pv.kind == kindMarkdown && !pv.source {
+			ui.Scroll(c).Key("md").Grow(1).Padding(28, 40, 40).Children(func() {
+				mdView(c, pv.markdown)
+			})
+			return
+		}
+		editor.View(c, &pv.ed).Grow(1)
+	})
+}
+
+// pdfViewer shows the pages of a PDF, rendering each as it scrolls into
+// view.
+func (a *App) pdfViewer(c *ui.Context, t *ui.Theme, p *palette, pv *previewState) {
+	ww, _ := c.Size()
+	pageW := min(ww-120, 900)
+	pixels := int(pageW * 2)
+	list := ui.List(c, &pv.pageList, len(pv.pages)).Fill().Gap(18).Padding(4, 0, 40)
+	list.Rows(func(row ui.ListRow) {
+		c := row.Context
+		i := row.Index
+		pg := pv.doc.Pages[i]
+		h := pageW * float32(pg.Height/pg.Width)
+		ui.Row(c).Justify(ui.Center).Children(func() {
+			page := ui.Box(c).Size(pageW, h).Radius(4).Background(ui.Hex("#ffffff")).Center().
+				Shadow(0, 12, 40, -12, ui.RGBA(0, 0, 0, 0.5))
+			page.Children(func() {
+				if bmp := pv.pages[i]; bmp != nil {
+					ui.Image(c, bmp).Fill().Fit(ui.Contain).Transition(ui.ElementTransition{Enter: &ui.Motion{Opacity: 0}, Animation: &fadeQuick})
+				} else {
+					ui.Spinner(c).Label("渲染中")
+					a.renderPage(pv, i, pixels)
+				}
+			})
+		})
+	})
+}
+
+// renderPage renders a page of the PDF on a goroutine.
+func (a *App) renderPage(pv *previewState, i, pixels int) {
+	if pv.rendering[i] {
+		return
+	}
+	pv.rendering[i] = true
+	doc := pv.doc
+	go func() {
+		img, err := doc.Render(i, pixels)
+		if err != nil {
+			return
+		}
+		bmp := ui.NewBitmap(img)
+		a.update(func() {
+			if a.pv == pv {
+				pv.pages[i] = bmp
+			}
+		})
+	}()
+}
+
+// audioPlayer plays audio that streams as it plays.
+func (a *App) audioPlayer(c *ui.Context, t *ui.Theme, p *palette, pv *previewState) {
+	pl := pv.player
+	playing := pl.Playing()
+	if playing {
+		c.After(250 * time.Millisecond)
+	}
+	ui.Column(c).Width(400).Padding(28).Gap(18).Radius(24).AlignItems(ui.Center).Background(p.Card).
+		Shadow(0, 30, 80, -20, ui.RGBA(0, 0, 0, 0.55)).Transition(popIn).Children(func() {
+		disc := ui.Box(c).Size(168, 168).Radius(84).Center().
+			ConicGradient(ui.ConicGradient{Stops: []ui.GradientStop{
+				{Color: ui.Oklch(0.7, 0.16, 300), At: 0}, {Color: ui.Oklch(0.72, 0.14, 230), At: 0.5}, {Color: ui.Oklch(0.7, 0.16, 300), At: 1},
+			}, Oklab: true}).Shadow(0, 18, 40, -12, ui.Oklch(0.6, 0.18, 280).Alpha(0.6))
+		spin := disc.Loop("spin", 12*time.Second, ui.Linear)
+		if playing {
+			disc.Rotate(spin * 360)
+		}
+		disc.AnimatePose(ui.Pose{Scale: map[bool]float32{true: 1, false: 0.94}[playing]}, springPop)
+		disc.Children(func() {
+			ui.Box(c).Size(44, 44).Radius(22).Background(p.Card).Center().Children(func() {
+				ui.Icon(c, icon("music")).FontSize(18).TextColor(t.TextMuted)
+			})
+		})
+		ui.Text(c, strings.TrimSuffix(pv.file.Name, path.Ext(pv.file.Name))).FontSize(17).FontWeight(650).TextAlign(ui.Center).MaxLines(2)
+		pos, dur := pl.Position(), pl.Duration()
+		frac := float64(0)
+		if dur > 0 {
+			frac = float64(pos) / float64(dur)
+		}
+		seek := frac
+		if ui.Slider(c, &seek, 0, 1).FillWidth().Label("进度").Changed() && dur > 0 {
+			pl.Seek(time.Duration(seek * float64(dur)))
+		}
+		ui.Row(c).FillWidth().Children(func() {
+			ui.Text(c, clock(pos)).FontSize(t.Rem(0.82)).TextColor(t.TextMuted).FontFeatures("tnum")
+			ui.Spacer(c)
+			ui.Text(c, clock(dur)).FontSize(t.Rem(0.82)).TextColor(t.TextMuted).FontFeatures("tnum")
+		})
+		btn := ui.ButtonBase(c).Label(map[bool]string{true: "暂停", false: "播放"}[playing]).Size(56, 56).Radius(28).Center().
+			Background(t.Accent).TextColor(t.AccentText).Shadow(0, 10, 24, -8, t.Accent)
+		btn.AnimatePose(ui.Pose{Scale: map[bool]float32{true: 0.94, false: 1}[btn.Pressed()]}, springPop)
+		btn.Children(func() {
+			ui.Icon(c, icon(map[bool]string{true: "pause", false: "play"}[playing])).FontSize(22).
+				ContentTransition(ui.ContentTransition{})
+		})
+		if btn.Clicked() || c.Shortcut(0, ui.KeySpace) {
+			if playing {
+				pl.Pause()
+			} else {
+				pl.Play()
+			}
+		}
+	})
+}
+
+func clock(d time.Duration) string {
+	s := int(d.Seconds())
+	return itoa(s/60) + ":" + pad2(s%60)
+}
+
+// groupIndex returns where the picture shown is among its folder's.
+func (pv *previewState) groupIndex() int {
+	for i, g := range pv.group {
+		if g.FsID == pv.file.FsID {
+			return i
+		}
+	}
+	return 0
+}

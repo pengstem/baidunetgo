@@ -142,7 +142,11 @@ func (a *App) fileGrid(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 			k := kindOf(f)
 			if bmp := a.thumb(f); bmp != nil {
 				box.Children(func() {
-					ui.Image(c, bmp).Fill().Fit(ui.Cover).Transition(ui.ElementTransition{Enter: &ui.Motion{Opacity: 0}, Animation: &fadeQuick})
+					if a.previewing(f) {
+						return // the preview shows it, grown from here
+					}
+					ui.Image(c, bmp).Fill().Fit(ui.Cover).
+						Transition(ui.ElementTransition{Enter: &ui.Motion{Opacity: 0}, Animation: &springPanel, Match: thumbMatch{f.FsID}})
 					if k == kindVideo {
 						ui.Box(c).Absolute().Bottom(6).Right(6).Size(22, 22).Radius(11).Center().
 							Background(ui.RGBA(0, 0, 0, 0.55)).TextColor(ui.Hex("#ffffff")).Children(func() {
@@ -172,8 +176,11 @@ func (a *App) fileIcon(c *ui.Context, t *ui.Theme, p *palette, f *baidu.File, si
 	if k.hasThumb() {
 		if bmp := a.thumb(f); bmp != nil {
 			box.Children(func() {
+				if a.previewing(f) {
+					return
+				}
 				ui.Image(c, bmp).Fill().Fit(ui.Cover).
-					Transition(ui.ElementTransition{Enter: &ui.Motion{Opacity: 0, Scale: 0.9}, Animation: &springSoft})
+					Transition(ui.ElementTransition{Enter: &ui.Motion{Opacity: 0, Scale: 0.9}, Animation: &springPanel, Match: thumbMatch{f.FsID}})
 			})
 			return
 		}
@@ -290,3 +297,6 @@ func (a *App) viewSwitch(c *ui.Context, t *ui.Theme, p *palette) {
 	})
 	a.gridView = chosen == 1
 }
+
+// previewing reports whether the preview shows f.
+func (a *App) previewing(f *baidu.File) bool { return a.pv != nil && a.pv.file.FsID == f.FsID }

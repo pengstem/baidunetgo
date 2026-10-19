@@ -32,6 +32,10 @@ type App struct {
 	gridView    bool
 	thumbs      *thumbs
 
+	pv            *previewState
+	settings      settings
+	pendingToasts []ui.Toast
+
 	sidebarCollapsed bool
 	profileOpen      bool
 
@@ -54,6 +58,7 @@ func New() *App {
 func (a *App) Attach(win *mygo.Window) {
 	a.win = win
 	a.store = openStore()
+	a.settings = loadSettings()
 	a.boot()
 }
 
@@ -100,5 +105,7 @@ func (a *App) View(c *ui.Context) {
 			Animation: &springPanel,
 			Enter:     &ui.Motion{Scale: 0.97},
 		}).Children(func() { a.shell(c, t, p) })
+		a.previewOverlay(c, t, p)
 	}
+	a.toasts(c, t, p)
 }
