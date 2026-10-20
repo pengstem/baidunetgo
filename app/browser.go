@@ -18,14 +18,22 @@ const (
 // filesPage is the browser showing one directory.
 func (a *App) filesPage(c *ui.Context, t *ui.Theme, p *palette, dir string) {
 	l := a.listingFor(dir)
+	a.arrivals(l, c.Now())
 	if l.loaded && l.sorted != a.order {
 		sortFiles(l.files, a.order)
 		l.sorted = a.order
+	}
+	// Files coming and going are not chosen.
+	for id := range l.sel.All() {
+		if id < 0 || a.dying[id] != nil {
+			l.sel.Remove(id)
+		}
 	}
 	a.fileActions(c, l)
 	page := ui.Column(c).Key("files:" + dir).Grow(1)
 	if dropped := page.DroppedFiles(); len(dropped) > 0 {
 		a.upload(dropped, dir)
+		a.dropped = c.Now()
 	}
 	page.Children(func() {
 		switch {
@@ -44,19 +52,26 @@ func (a *App) filesPage(c *ui.Context, t *ui.Theme, p *palette, dir string) {
 			a.statusBar(c, t, p, l)
 		}
 		a.selectionBar(c, t, p, l)
-		if page.FileDragOver() {
+		over := page.FileDragOver()
+		if over {
 			a.dropZone(c, t, p, dir)
 		}
+		a.dropGlow(c, t, over)
 	})
 }
 
 // dropZone shows where files dragged over the window will go.
 func (a *App) dropZone(c *ui.Context, t *ui.Theme, p *palette, dir string) {
-	zone := ui.Column(c).Key("dropzone").Absolute().Top(8).Left(12).Right(12).Bottom(12).Center().Gap(10).
-		Radius(8).Background(t.Background.Alpha(0.9)).Border(1, t.Accent).BorderStyle(ui.BorderDashed).PassThrough().
+	zone := ui.Column(c).Key("dropzone").Absolute().Top(6).Left(8).Right(8).Bottom(8).Center().Gap(12).
+		Radius(10).Background(t.Background.Alpha(0.8)).PassThrough().
 		Transition(ui.ElementTransition{Animation: &motionFade, Enter: &ui.Motion{Opacity: 0}, Exit: &ui.Motion{Opacity: 0}})
 	zone.Children(func() {
-		ui.Icon(c, icon("upload")).FontSize(22).TextColor(t.Accent)
+		disc := ui.Box(c).Size(52, 52).Radius(26).Center().Background(t.Accent).TextColor(t.AccentText)
+		// The arrow rises and settles, again and again.
+		lift := disc.Loop("lift", 1600*time.Millisecond, ui.Bounce(ui.EaseInOut))
+		disc.Children(func() {
+			ui.Icon(c, icon("upload")).FontSize(24).Translate(0, 2-4*lift)
+		})
 		ui.Text(c, "松开以上传到「"+dirLabel(dir)+"」").FontSize(14).FontWeight(500)
 	})
 }
@@ -89,7 +104,11 @@ func (a *App) fileList(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 		f := &l.files[row.Index]
 		r := ui.Row(c).Height(rowHeight).PaddingX(10).Gap(8).AlignItems(ui.Center).Radius(6).TextColor(t.Text)
 		muted := t.TextMuted
+		passing, gone := a.passing(r, f, t, now)
 		switch {
+		case passing:
+			// Gone, the row closes up.
+			r.Height(rowHeight * (1 - smoothstep(0.7, 1, gone)))
 		case row.Selected() && row.ListFocused():
 			// Chosen in the list with the focus: the accent, its text
 			// turned white, as AppKit's tables.
@@ -117,9 +136,15 @@ func (a *App) fileList(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 			}
 			ui.Text(c, kindLabel(f)).Width(colType).TextColor(muted).SingleLine()
 			figure(c, size).Width(colSize).TextAlign(ui.End).TextColor(muted)
-			figure(c, stampTime(f.Mtime, now)).Width(colTime).TextAlign(ui.End).TextColor(muted)
+			when := stampTime(f.Mtime, now)
+			if g := a.gathers[f.Path]; g != nil && f.FsID < 0 {
+				when = uploadLabel(g)
+			}
+			figure(c, when).Width(colTime).TextAlign(ui.End).TextColor(muted)
 		})
-		a.fileMenu(r, l, row.Index)
+		if !passing {
+			a.fileMenu(r, l, row.Index)
+		}
 	})
 	if list.Submitted() && l.selected >= 0 && l.selected < len(l.files) {
 		a.open(l.files[l.selected])
@@ -202,8 +227,11 @@ func (a *App) fileGrid(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 	a.tileGrid(c, l, func(i int, tile ui.Element) {
 		f := &l.files[i]
 		tile.Padding(10).Gap(8).AlignItems(ui.Center).Radius(t.Radius).TextColor(t.Text)
+		passing, _ := a.passing(tile, f, t, now)
 		fill := t.Background
 		switch {
+		case passing:
+			fill = ui.Transparent
 		case l.sel.Has(f.FsID):
 			fill = t.Background.Mix(t.Accent, 0.16)
 		case tile.Hovered():
@@ -229,6 +257,8 @@ func (a *App) fileGrid(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 						})
 					}
 				})
+			} else if a.thumbPending(f) {
+				box.Draw(func(p *ui.Painter, r ui.Rect) { drawShimmer(p, r, t, 8) })
 			} else {
 				box.Children(func() {
 					if k == kindFolder {
@@ -243,7 +273,9 @@ func (a *App) fileGrid(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 			}
 			ui.Text(c, a.tileName(c, f.Name)).NoWrap().TextAlign(ui.Center).LineHeight(1.25)
 		})
-		a.fileMenu(tile, l, i)
+		if !passing {
+			a.fileMenu(tile, l, i)
+		}
 	})
 }
 
@@ -318,6 +350,10 @@ func (a *App) fileIcon(c *ui.Context, t *ui.Theme, p *palette, f *baidu.File, si
 				ui.Image(c, bmp).Fill().Fit(ui.Cover).
 					Transition(ui.ElementTransition{Enter: &ui.Motion{Opacity: 0}, Animation: &motionPanel, Match: thumbMatch{f.FsID}})
 			})
+			return
+		}
+		if a.thumbPending(f) {
+			ui.Box(c).Size(size, size).Draw(func(p *ui.Painter, r ui.Rect) { drawShimmer(p, r, t, 3) })
 			return
 		}
 	}

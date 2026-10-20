@@ -33,6 +33,10 @@ type listing struct {
 	sel      ui.Selection[int64]
 	selected int
 	used     uint64
+
+	loads       int      // counts the reads that came back
+	ghosts      []string // the uploads it shows that it does not list yet
+	uploadsSeen [2]int   // the transfers' gen and loads it last followed the uploads at
 }
 
 const listingCacheSize = 40
@@ -114,8 +118,9 @@ func (a *App) load(l *listing) {
 				}
 				return
 			}
-			l.files, l.loaded = files, true
-			l.sorted = baidu.Order{}
+			l.files, l.loaded = a.keepDying(l.dir, files), true
+			l.sorted, l.ghosts = baidu.Order{}, nil
+			l.loads++
 			if l.shown.IsZero() {
 				l.shown = time.Now()
 			}
@@ -164,6 +169,9 @@ func naturalCompare(a, b string) int { return nameCollator.CompareString(a, b) }
 
 // open opens a file: a folder goes into it, a file previews.
 func (a *App) open(f baidu.File) {
+	if f.FsID < 0 || a.dying[f.FsID] != nil {
+		return // coming or going
+	}
 	if f.IsDir {
 		a.router.Push(filesRoute(f.Path))
 		return

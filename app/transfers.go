@@ -19,6 +19,7 @@ import (
 type transfersState struct {
 	tab     int // 0 going, 1 done
 	tasks   []transfer.Task
+	gen     int // counts changes of tasks
 	list    ui.ListState
 	speeds  []float64 // the total speed each second, the latest last
 	sampled time.Time // when speeds last took a sample
@@ -40,6 +41,7 @@ func (a *App) startTransfers() {
 		a.update(func() {
 			if a.xfer == m {
 				a.transfers.tasks = tasks
+				a.transfers.gen++
 				a.showTransfers(tasks)
 			}
 		})
@@ -58,6 +60,7 @@ func (a *App) stopTransfers() {
 		a.xfer = nil
 	}
 	a.transfers = transfersState{}
+	a.gathers = nil
 	a.showTransfers(nil)
 }
 

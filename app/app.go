@@ -40,6 +40,12 @@ type App struct {
 	tileNames   map[string]string // names laid out for grid tiles (tileName)
 	gridSize    [2]float32        // the grid's tiles' width and its height, as last laid out
 	thumbs      *thumbs
+	dying       map[int64]*dying   // files deleted, dissolving (arrivals.go)
+	gathers     map[string]*gather // uploads, by the entry of their folder they make
+	passed      time.Time          // when passTime last moved them on
+	dropped     time.Time          // when files were last dropped on the browser
+	gpu         bool               // the window draws on a GPU, so shaders draw at speed
+	now         time.Time          // the frame's time
 
 	pv            *previewState
 	dlg           dialog
@@ -138,6 +144,8 @@ func (a *App) View(c *ui.Context) {
 	if a.win == nil {
 		a.runQueued(c)
 	}
+	a.now = c.Now()
+	a.passTime(a.now)
 	t, p := applyTheme(c)
 	switch a.phase {
 	case phaseBooting:

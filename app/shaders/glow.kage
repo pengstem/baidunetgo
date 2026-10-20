@@ -1,0 +1,58 @@
+package main
+
+// The drop zone's ring: a line inset Pad DIPs in the box with corners of
+// Radius, blues and violets flowing around it and a brighter arc running
+// ahead of them, glowing inward and out; Burst flares it as files land.
+
+var Time float
+var Strength float
+var Burst float
+var Pad float
+var Radius float
+
+func Fragment(dst vec4, pos vec2) vec4 {
+	size := rectSize()
+	p := pos - 0.5*size
+	d := roundRect(p, 0.5*size-Pad, Radius)
+	a := around(p, size)
+	line := exp(-abs(d) / (0.8 + 1.5*Burst))
+	halo := exp(-d/4) * 0.5
+	if d < 0 {
+		halo = exp(d/(12+40*Burst))*0.45 + exp(d/48)*0.12
+	}
+	head := fract(a - Time*0.16)
+	arc := exp(-head*7) + exp(-(1-head)*40)
+	alpha := clamp((line*(0.7+0.6*arc)+halo*(0.6+0.7*arc))*Strength, 0, 1)
+	col := palette(a - Time*0.07)
+	return vec4(col*alpha, alpha)
+}
+
+// palette loops from 0 to 1 through the system's blue, cyan, indigo and
+// purple.
+func palette(x float) vec3 {
+	x = fract(x) * 4
+	if x < 1 {
+		return mix(vec3(0.04, 0.52, 1), vec3(0.39, 0.82, 1), x)
+	}
+	if x < 2 {
+		return mix(vec3(0.39, 0.82, 1), vec3(0.37, 0.36, 0.9), x-1)
+	}
+	if x < 3 {
+		return mix(vec3(0.37, 0.36, 0.9), vec3(0.75, 0.35, 0.95), x-2)
+	}
+	return mix(vec3(0.75, 0.35, 0.95), vec3(0.04, 0.52, 1), x-3)
+}
+
+// roundRect returns the distance from p, from the rectangle's middle, to
+// a rectangle of half size half with corners of radius r: below zero
+// inside.
+func roundRect(p, half vec2, r float) float {
+	q := abs(p) - half + r
+	return length(max(q, 0)) + min(max(q.x, q.y), 0) - r
+}
+
+// around returns where p, from the middle of a box of size, lies around
+// its outline, from 0 to 1.
+func around(p, size vec2) float {
+	return atan2(p.y/size.y, p.x/size.x)/6.2831853 + 0.5
+}

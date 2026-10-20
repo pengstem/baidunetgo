@@ -1,0 +1,110 @@
+package main
+
+// Specks: an element breaking into specks of itself that drift up and
+// away (Gather 0, Progress from 0 to 1), or a cloud of its specks that
+// settle into it (Gather 1, Progress from 1 to 0). Each cell of the
+// element, cell DIPs square, leaves at its own time, the cells sweeping
+// across it, and carries its pixels with it, shrinking and taking on
+// Tint as it goes.
+
+var Progress float
+var Gather float
+var Time float
+var Seed float
+var Tint vec4
+
+// Reach is how far a speck strays from its cell, in DIPs: across from
+// Reach.x to Reach.y, down from Reach.z to Reach.w.
+var Reach vec4
+
+const cell = 3.0
+
+// life is how much of Progress a speck takes to go.
+const life = 0.4
+
+func pcg(v uint) uint {
+	s := v*747796405 + 2891336453
+	w := ((s >> ((s >> 28) + 4)) ^ s) * 277803737
+	return (w >> 22) ^ w
+}
+
+// rand4 returns four numbers from 0 to 1 of the cell at c, a byte of one
+// hash each.
+func rand4(c ivec2) vec4 {
+	h := pcg(uint(c.x)*1973 + uint(c.y)*9277 + uint(Seed)*26699)
+	return (vec4(float(h&255), float((h>>8)&255), float((h>>16)&255), float(h>>24)) + 0.5) / 256
+}
+
+// away returns how far the speck of a cell, x across the element from 0
+// to 1, is on its way: 0 at home, 1 gone.
+func away(x float, r vec4) float {
+	if Gather > 0.5 {
+		x = 1 - x // settling from the left, as a bar fills
+	}
+	d := 0.45*x + 0.15*r.x
+	return clamp((Progress-d)/life, 0, 1)
+}
+
+// offset returns where a speck t of the way is from its cell.
+func offset(t float, r vec4) vec2 {
+	if Gather > 0.5 {
+		a := r.y * 6.2831853
+		dist := 4 + 14*r.z
+		drift := vec2(sin(Time*1.6+r.w*6.2831853), cos(Time*1.2+r.x*6.2831853)) * 2.5
+		return (vec2(cos(a)*dist, sin(a)*dist*0.4) + drift) * smoothstep(0, 1, t)
+	}
+	a := -0.6 + (r.y-0.5)*0.9
+	dist := 10 + 16*r.z
+	e := t * (0.35 + 0.65*t)
+	return vec2(cos(a), sin(a))*dist*e + vec2(0, -4*t*t)
+}
+
+func LayerEffect(pos vec2) vec4 {
+	size := rectSize()
+	// No speck goes there: the content's margin beyond where the specks
+	// can reach, which the effect covers too.
+	if pos.x < Reach.x-cell || pos.x > size.x+Reach.y+cell || pos.y < Reach.z-cell || pos.y > size.y+Reach.w+cell {
+		return vec4(0)
+	}
+	cols := int(ceil(size.x / cell))
+	rows := int(ceil(size.y / cell))
+	out := vec4(0)
+	hx := int(floor(pos.x / cell))
+	hy := int(floor(pos.y / cell))
+	if hx >= 0 && hy >= 0 && hx < cols && hy < rows {
+		home := ivec2(hx, hy)
+		if away((float(hx)+0.5)*cell/size.x, rand4(home)) <= 0 {
+			out = layerAt(pos)
+		}
+	}
+	// The cells whose specks can reach pos.
+	x0 := max(int(floor((pos.x-Reach.y)/cell-0.5)), 0)
+	x1 := min(int(floor((pos.x-Reach.x)/cell+0.5)), cols-1)
+	y0 := max(int(floor((pos.y-Reach.w)/cell-0.5)), 0)
+	y1 := min(int(floor((pos.y-Reach.z)/cell+0.5)), rows-1)
+	for y := y0; y <= y1; y++ {
+		for x := x0; x <= x1; x++ {
+			c := ivec2(x, y)
+			center := (vec2(float(x), float(y)) + 0.5) * cell
+			r := rand4(c)
+			t := away(center.x/size.x, r)
+			if t <= 0 || (Gather < 0.5 && t >= 1) {
+				continue
+			}
+			k := 1 - 0.45*t // the speck shrinks as it goes
+			d := pos - (center + offset(t, r))
+			if abs(d.x) > cell*0.5*k || abs(d.y) > cell*0.5*k {
+				continue
+			}
+			col := layerSample(center + d/k)
+			fade := 1 - smoothstep(0.45, 1, t)
+			if Gather > 0.5 {
+				fade = 1 - 0.45*smoothstep(0.15, 1, t)
+			}
+			glow := smoothstep(0, 0.35, t) * Tint.a
+			col = vec4(mix(col.rgb, Tint.rgb*col.a, glow), col.a) * fade
+			out = col + out*(1-col.a)
+		}
+	}
+	return out
+}

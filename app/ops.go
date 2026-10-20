@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"path"
-	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -47,7 +46,7 @@ type dialog struct {
 func (l *listing) chosen() []baidu.File {
 	var out []baidu.File
 	for _, f := range l.files {
-		if l.sel.Has(f.FsID) {
+		if f.FsID >= 0 && l.sel.Has(f.FsID) {
 			out = append(out, f)
 		}
 	}
@@ -121,16 +120,24 @@ func (a *App) remove(dir string, files []baidu.File) {
 		ids[i] = f.FsID
 	}
 	if l := a.listings[dir]; l != nil {
-		// Take them out at once; the reload confirms it.
-		l.files = slices.DeleteFunc(l.files, func(f baidu.File) bool { return slices.Contains(ids, f.FsID) })
+		// They dissolve at once, then leave; the reload confirms it.
+		a.dissolve(l, ids)
 		l.sel.Clear()
 	}
 	a.run(func(ctx context.Context, c *baidu.Client) error {
-		return c.Delete(ctx, paths(files))
+		err := c.Delete(ctx, paths(files))
+		if err != nil {
+			a.update(func() {
+				a.spare(ids)
+				a.reload(dir)
+			})
+		}
+		return err
 	}, []string{dir}, "", func() {
 		a.pendingToasts = append(a.pendingToasts, ui.Toast{
 			Title: "已删除 " + countLabel(files), Type: "success", Action: "撤销", Timeout: 7 * time.Second,
 			OnAction: func() {
+				a.spare(ids)
 				a.run(func(ctx context.Context, c *baidu.Client) error { return c.Restore(ctx, ids) }, []string{dir}, "已还原", nil)
 			},
 		})

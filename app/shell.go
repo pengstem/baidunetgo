@@ -55,6 +55,7 @@ func (a *App) shell(c *ui.Context, t *ui.Theme, p *palette) {
 	}
 	bar := c.TitleBar()
 	row := ui.Row(c).Fill().AlignItems(ui.Stretch)
+	row.Draw(func(p *ui.Painter, _ ui.Rect) { a.gpu = p.Accelerated() })
 	shown := row.AnimateTo("sidebar", map[bool]float32{true: 0, false: 1}[a.sidebarCollapsed], motionPanel)
 	row.Children(func() {
 		// The sidebar slides out to the left as it hides.
