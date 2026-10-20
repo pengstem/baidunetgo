@@ -195,7 +195,8 @@ func (s *Server) entry(n *Node) map[string]any {
 		"category": n.Category,
 	}
 	if n.Category == 3 || n.Category == 1 {
-		u := s.URL + "/thumb?id=" + strconv.FormatInt(n.FsID, 10)
+		// Signed afresh with every listing, as the netdisk's are.
+		u := s.URL + "/thumb?id=" + strconv.FormatInt(n.FsID, 10) + "&sign=" + strconv.FormatInt(time.Now().UnixNano(), 36)
 		e["thumbs"] = map[string]string{"url1": u, "url2": u, "url3": u}
 	}
 	return e

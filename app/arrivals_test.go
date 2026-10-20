@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/egoist/mygo/ui"
+
 	"github.com/pengstem/baidunetgo/internal/baidu"
 	"github.com/pengstem/baidunetgo/internal/transfer"
 )
@@ -87,5 +89,44 @@ func settleFor(tt interface{ Advance(time.Duration) }, d time.Duration) {
 	for step := 60 * time.Millisecond; d > 0; d -= step {
 		time.Sleep(10 * time.Millisecond)
 		tt.Advance(step)
+	}
+}
+
+// TestDeleteKeepsThumbnails deletes one picture: the folder read again
+// signs its thumbnail URLs afresh, and the other pictures keep showing
+// the thumbnails they had, not fetching them again.
+func TestDeleteKeepsThumbnails(t *testing.T) {
+	a, tt, _ := signedIn(t)
+	a.gridView = true
+	a.router.Push(filesRoute("/照片"))
+	waitFor(t, tt, "IMG_2310.jpg")
+	l := a.listingFor("/照片")
+	shown := map[int64]*ui.Bitmap{}
+	deadline := time.Now().Add(5 * time.Second)
+	for len(shown) < 4 && time.Now().Before(deadline) {
+		settleFor(tt, 100*time.Millisecond)
+		for _, f := range l.files {
+			if bmp := a.thumb(&f); bmp != nil {
+				shown[f.FsID] = bmp
+			}
+		}
+	}
+	if len(shown) < 4 {
+		t.Fatalf("%d thumbnails arrived", len(shown))
+	}
+	a.remove("/照片", []baidu.File{fileNamed(t, a, "/照片", "IMG_2310.jpg")})
+	loads := l.loads
+	for l.loads == loads && time.Now().Before(deadline.Add(5*time.Second)) {
+		settleFor(tt, 60*time.Millisecond)
+	}
+	if l.loads == loads {
+		t.Fatal("not read again")
+	}
+	for _, f := range l.files {
+		if was := shown[f.FsID]; was != nil && f.Name != "IMG_2310.jpg" {
+			if bmp := a.thumb(&f); bmp != was {
+				t.Fatalf("%s lost its thumbnail when the folder was read again", f.Name)
+			}
+		}
 	}
 }

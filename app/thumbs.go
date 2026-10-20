@@ -21,6 +21,16 @@ const (
 	thumbFailed
 )
 
+// thumbKey names a thumbnail by the file and its version, not by its URL:
+// the netdisk signs thumbnail URLs afresh with every listing, so a folder
+// read again (after a file in it is deleted, say) would fetch them all
+// again.
+type thumbKey struct {
+	fsid, mtime, size int64
+}
+
+func thumbKeyOf(f *baidu.File) thumbKey { return thumbKey{f.FsID, f.Mtime, f.Size} }
+
 type thumbEntry struct {
 	state thumbState
 	bmp   *ui.Bitmap
@@ -30,13 +40,14 @@ type thumbEntry struct {
 // thumbs fetches thumbnails into memory as rows show them, a few at a
 // time, keeping the most recently shown.
 type thumbs struct {
-	entries map[string]*thumbEntry
+	entries map[thumbKey]*thumbEntry
 	tick    uint64
 	queue   chan thumbJob
 	cancel  context.CancelFunc
 }
 
 type thumbJob struct {
+	key thumbKey
 	url string
 	c   *baidu.Client
 }
@@ -44,7 +55,7 @@ type thumbJob struct {
 // startThumbs starts the workers fetching thumbnails for a session.
 func (a *App) startThumbs() {
 	ctx, cancel := context.WithCancel(context.Background())
-	a.thumbs = &thumbs{entries: map[string]*thumbEntry{}, queue: make(chan thumbJob, 4096), cancel: cancel}
+	a.thumbs = &thumbs{entries: map[thumbKey]*thumbEntry{}, queue: make(chan thumbJob, 4096), cancel: cancel}
 	th := a.thumbs
 	for range thumbWorkers {
 		go func() {
@@ -55,7 +66,7 @@ func (a *App) startThumbs() {
 				case job := <-th.queue:
 					bmp := fetchThumb(ctx, job)
 					a.update(func() {
-						if e := th.entries[job.url]; e != nil {
+						if e := th.entries[job.key]; e != nil {
 							if bmp != nil {
 								e.state, e.bmp = thumbReady, bmp
 							} else {
@@ -101,15 +112,16 @@ func (a *App) thumb(f *baidu.File) *ui.Bitmap {
 		return nil
 	}
 	th.tick++
-	if e, ok := th.entries[f.Thumb]; ok {
+	key := thumbKeyOf(f)
+	if e, ok := th.entries[key]; ok {
 		e.used = th.tick
 		return e.bmp
 	}
-	th.entries[f.Thumb] = &thumbEntry{used: th.tick}
+	th.entries[key] = &thumbEntry{used: th.tick}
 	select {
-	case th.queue <- thumbJob{url: f.Thumb, c: a.sess.client}:
+	case th.queue <- thumbJob{key: key, url: f.Thumb, c: a.sess.client}:
 	default:
-		delete(th.entries, f.Thumb) // try again in a later frame
+		delete(th.entries, key) // try again in a later frame
 	}
 	if len(th.entries) > thumbCacheSize {
 		th.evict()
@@ -119,7 +131,7 @@ func (a *App) thumb(f *baidu.File) *ui.Bitmap {
 
 // evict forgets the thumbnails shown longest ago.
 func (th *thumbs) evict() {
-	var oldest []string
+	var oldest []thumbKey
 	limit := th.tick - thumbCacheSize/2
 	for k, e := range th.entries {
 		if e.used < limit && e.state != thumbQueued {

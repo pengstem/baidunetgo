@@ -102,7 +102,7 @@ func (a *App) openPreview(f baidu.File) {
 			}
 		}
 		if f.Thumb != "" && a.thumbs != nil {
-			if e := a.thumbs.entries[f.Thumb]; e != nil {
+			if e := a.thumbs.entries[thumbKeyOf(&f)]; e != nil {
 				pv.thumb = e.bmp
 			}
 		}
