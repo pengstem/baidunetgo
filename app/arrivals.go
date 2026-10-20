@@ -21,7 +21,8 @@ type dying struct {
 	dir   string
 	index int // where it was, to keep it there through a reload
 	file  baidu.File
-	at    time.Time
+	delay time.Duration // after the files deleted with it before it
+	at    time.Time     // when it starts, set by the first frame to show it
 }
 
 // gather is an upload as its folder shows it: the file, or the folder of
@@ -57,7 +58,7 @@ func (a *App) dissolve(l *listing, ids []int64) {
 	n := 0
 	for i, f := range l.files {
 		if slices.Contains(ids, f.FsID) {
-			a.dying[f.FsID] = &dying{dir: l.dir, index: i, file: f, at: a.now.Add(time.Duration(min(n, 12)) * 35 * time.Millisecond)}
+			a.dying[f.FsID] = &dying{dir: l.dir, index: i, file: f, delay: time.Duration(min(n, 12)) * 35 * time.Millisecond}
 			n++
 		}
 	}
@@ -86,6 +87,11 @@ func (a *App) keepDying(dir string, files []baidu.File) []baidu.File {
 // while ago, or failed and dissolved, are forgotten.
 func (a *App) passTime(now time.Time) {
 	for id, d := range a.dying {
+		// From the frame that first shows it: the last frame built may be
+		// long past when nothing moved.
+		if d.at.IsZero() {
+			d.at = now.Add(d.delay)
+		}
 		if now.Sub(d.at) < dissolveFor {
 			continue
 		}

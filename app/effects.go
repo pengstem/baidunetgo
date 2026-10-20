@@ -33,19 +33,42 @@ var epoch = time.Now()
 
 func shaderClock(now time.Time) float32 { return float32(now.Sub(epoch).Seconds()) }
 
-// speckle draws an element through the specks shader: progress from 0,
-// whole, to 1, scattered; gathering, the specks drift about as they wait
-// and settle from the left, else they blow up and away from the left.
-func speckle(progress float32, gathering bool, seed uint32, tint ui.Color, now time.Time) ui.Effect {
-	// How far the specks stray (offset in specks.kage): up and to the
-	// right as they blow away, about as they gather.
-	reach, margin, g := []float32{0, 26, -29, 0}, ui.Point{X: 28, Y: 30}, 0
-	if gathering {
-		reach, margin, g = []float32{-21, 21, -10, 10}, ui.Point{X: 22, Y: 12}, 1
+// specksFx draws an element through the specks shader, progress(now)
+// from 0, whole, to 1, scattered: gathering, the specks drift about as
+// they wait and settle from the left, else they blow up and away from the
+// left. It reads the progress and the time as it paints, not as the view
+// builds: the frames AnimationFrame asks for paint the window again
+// without building it, and values set while building would stand still.
+type specksFx struct {
+	progress  func(now time.Time) float32
+	gathering bool
+	seed      uint32
+	tint      ui.Color
+}
+
+// reach returns how far the specks stray (offset in specks.kage): up and
+// to the right as they blow away, about as they gather; and the margin
+// the effect draws over around the element for it.
+func (fx specksFx) reach() ([]float32, ui.Point) {
+	if fx.gathering {
+		return []float32{-21, 21, -10, 10}, ui.Point{X: 22, Y: 12}
 	}
-	return specks.Effect(shader.Options{MaxSampleOffset: margin, Uniforms: map[string]any{
-		"Progress": progress, "Gather": g, "Time": shaderClock(now), "Seed": seed % 9973, "Tint": tint, "Reach": reach,
-	}})
+	return []float32{0, 26, -29, 0}, ui.Point{X: 28, Y: 30}
+}
+
+func (fx specksFx) EffectMargin() ui.Point { _, m := fx.reach(); return m }
+
+func (fx specksFx) PaintEffect(p *ui.Painter, box ui.Rect, content *ui.Bitmap, inset ui.Point) {
+	now := p.Now()
+	reach, margin := fx.reach()
+	g := 0
+	if fx.gathering {
+		g = 1
+	}
+	specks.Effect(shader.Options{MaxSampleOffset: margin, Uniforms: map[string]any{
+		"Progress": fx.progress(now), "Gather": g, "Time": shaderClock(now), "Seed": fx.seed % 9973, "Tint": fx.tint, "Reach": reach,
+	}}).PaintEffect(p, box, content, inset)
+	p.AnimationFrame()
 }
 
 // seedOf picks a file's specks by its path, which an upload's row and the
@@ -62,33 +85,53 @@ func seedOf(p string) uint32 {
 // would carry it), and how far it has gone, from 0 to 1, for a list to
 // close up the row.
 func (a *App) passing(e ui.Element, f *baidu.File, t *ui.Theme, now time.Time) (bool, float32) {
+	fx := specksFx{seed: seedOf(f.Path), tint: t.Accent.Alpha(0.5)}
 	var gone float32
 	switch g := a.gathers[f.Path]; {
 	case a.dying[f.FsID] != nil:
-		gone = since(now, a.dying[f.FsID].at, dissolveFor)
+		at := a.dying[f.FsID].at
+		fx.progress = func(now time.Time) float32 { return since(now, at, dissolveFor) }
+		gone = fx.progress(now)
 	case g != nil && g.failed:
-		gone = since(now, g.ended, dissolveFor)
+		at := g.ended
+		fx.progress = func(now time.Time) float32 { return since(now, at, dissolveFor) }
+		gone = fx.progress(now)
 	case g != nil && (g.shown < 1 || f.FsID < 0):
 		if g.shown >= 1 {
 			return true, 0 // up, waiting for the listing to show the file
 		}
-		if a.gpu {
-			e.Effect(speckle(1-g.shown, true, seedOf(f.Path), t.Accent.Alpha(0.85), now))
-		} else {
+		if !a.gpu {
 			e.Opacity(0.35 + 0.65*g.shown)
+			return true, 0
 		}
-		e.Draw(func(p *ui.Painter, _ ui.Rect) { p.AnimationFrame() })
+		fx.gathering, fx.tint = true, t.Accent.Alpha(0.85)
+		fx.progress = func(time.Time) float32 { return 1 - g.shown }
+		e.Effect(fx)
 		return true, 0
 	default:
 		return false, 0
 	}
 	if a.gpu {
-		e.Effect(speckle(gone, false, seedOf(f.Path), t.Accent.Alpha(0.5), now))
+		e.Effect(fx)
 	} else {
 		e.Opacity(1 - gone)
 	}
-	e.Draw(func(p *ui.Painter, _ ui.Rect) { p.AnimationFrame() })
 	return true, gone
+}
+
+// moving reports whether files coming or going need the view built again
+// in the next frame: rows dissolving, which close up and leave, and
+// uploads catching up with their share. Their specks move as they paint.
+func (a *App) moving() bool {
+	if len(a.dying) > 0 {
+		return true
+	}
+	for _, g := range a.gathers {
+		if g.failed || g.shown < g.target {
+			return true
+		}
+	}
+	return false
 }
 
 // since returns how far now is into a span of d from start, from 0 to 1.
@@ -142,11 +185,16 @@ func (a *App) dropGlow(c *ui.Context, t *ui.Theme, over bool) {
 		})
 		return
 	}
-	strength := float32(1)
-	if !over {
-		strength = burst // the flare fades the ring out
-	}
 	ring.Draw(func(p *ui.Painter, r ui.Rect) {
+		// The flare as it paints, which frames that only paint move on.
+		burst := 1 - since(p.Now(), a.dropped, 700*time.Millisecond)
+		strength := float32(1)
+		if !over {
+			strength = burst // the flare fades the ring out
+		}
+		if strength <= 0 {
+			return
+		}
 		glow.Draw(p, r, shader.Options{Uniforms: map[string]any{
 			"Time": shaderClock(p.Now()), "Strength": strength, "Burst": burst * burst, "Pad": 7, "Radius": 10,
 		}})

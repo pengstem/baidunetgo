@@ -45,7 +45,6 @@ type App struct {
 	passed      time.Time          // when passTime last moved them on
 	dropped     time.Time          // when files were last dropped on the browser
 	gpu         bool               // the window draws on a GPU, so shaders draw at speed
-	now         time.Time          // the frame's time
 
 	pv            *previewState
 	dlg           dialog
@@ -144,8 +143,10 @@ func (a *App) View(c *ui.Context) {
 	if a.win == nil {
 		a.runQueued(c)
 	}
-	a.now = c.Now()
-	a.passTime(a.now)
+	a.passTime(c.Now())
+	if a.moving() {
+		c.Invalidate()
+	}
 	t, p := applyTheme(c)
 	switch a.phase {
 	case phaseBooting:
