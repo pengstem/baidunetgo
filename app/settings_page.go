@@ -9,8 +9,14 @@ import (
 	"github.com/pengstem/baidunetgo/internal/player"
 )
 
-// Version is the app's version, set by the build.
-var Version = "0.1.0"
+// version is the app's version, which mygo build links in from mygo.json.
+// Builds run with go run or mygo dev have none.
+func version() string {
+	if v := mygo.App.Version(); v != "" {
+		return v
+	}
+	return "开发版"
+}
 
 // applySettings saves the settings and lets what runs follow them.
 func (a *App) applySettings() {
@@ -74,7 +80,7 @@ func (a *App) settingsPage(c *ui.Context, t *ui.Theme, p *palette) {
 			})
 			section(c, t, p, "关于", func() {
 				settingRow(c, t, p, "BaiduNetGo", "", func() {
-					figure(c, Version).FontSize(12).TextColor(t.TextMuted)
+					figure(c, version()).FontSize(12).TextColor(t.TextMuted)
 					if pill(c, t, p, "", "项目主页", false).Clicked() {
 						c.OpenURL("https://github.com/pengstem/baidunetgo")
 					}

@@ -1,0 +1,143 @@
+# Every push to main is a release: the tests run, tools/release picks the
+# next version and writes its notes to CHANGELOG.md, the release commit and
+# its tag are pushed, and each platform is built and uploaded to the GitHub
+# release of the tag, which is published once all of them are there.
+#
+# - The version goes up a patch. "#minor" or "#major" in a commit message
+#   raises that part instead; so does "Run workflow" with a bump chosen. A
+#   version set by hand in mygo.json is taken as it is.
+# - The notes are what CHANGELOG.md has under "## Unreleased", else the
+#   commits since the last release.
+# - "[skip release]" in the last commit's message, or a push of nothing
+#   but Markdown and docs, releases nothing.
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - ".claude/**"
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Which part of the version to raise
+        type: choice
+        options: [auto, patch, minor, major]
+        default: auto
+
+permissions:
+  contents: write # the release commit, its tag, and the release
+
+# One release at a time, each from the main of when it starts.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  test:
+    if: ${{ !contains(github.event.head_commit.message, '[skip release]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Vet
+        run: |
+          go vet ./...
+          test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      - name: Test
+        run: go test ./...
+
+  version:
+    needs: test
+    runs-on: ubuntu-latest
+    outputs:
+      skip: ${{ steps.next.outputs.skip }}
+      version: ${{ steps.next.outputs.version }}
+      tag: ${{ steps.next.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0 # the tags and commits since the last release
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Pick the version and write the notes
+        id: next
+        run: go run ./tools/release -bump "${{ inputs.bump || 'auto' }}" -notes "$RUNNER_TEMP/notes.md"
+      - name: Commit, tag and push
+        if: steps.next.outputs.skip != 'true'
+        env:
+          TAG: ${{ steps.next.outputs.tag }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "Release $TAG [skip ci]"
+          git tag "$TAG"
+          git push --atomic origin HEAD:main "$TAG"
+      - name: Create the draft release
+        if: steps.next.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.next.outputs.tag }}
+        run: |
+          if ! gh release view "$TAG" > /dev/null 2>&1; then
+            gh release create "$TAG" --draft --verify-tag --title "BaiduNetGo $TAG" --notes-file "$RUNNER_TEMP/notes.md"
+          fi
+
+  build:
+    needs: version
+    if: needs.version.outputs.skip != 'true'
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: Linux, os: ubuntu-latest, platform: "linux/amd64,linux/arm64" }
+          - { name: Windows, os: ubuntu-latest, platform: "windows/amd64,windows/arm64" }
+          # Signing (ad hoc) and the disk image need macOS.
+          - { name: macOS, os: macos-latest, platform: "darwin/universal" }
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Install NSIS, for the Windows installers
+        if: matrix.name == 'Windows'
+        run: sudo apt-get update && sudo apt-get install -y nsis
+      - name: Build
+        run: go tool mygo build -platform "${{ matrix.platform }}"
+      - name: Upload to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          shopt -s nullglob
+          files=(build/*/*.dmg build/*/*Setup*.exe build/*/*.deb build/*/*.tar.gz)
+          # The Windows apps also as a zip, to run without installing.
+          for dir in build/windows-*/; do
+            arch="${dir%/}"; arch="${arch##*-}"
+            zip="build/BaiduNetGo-$VERSION-windows-$arch.zip"
+            (cd "$dir" && zip -qr "$OLDPWD/$zip" . -x '*Setup*.exe')
+            files+=("$zip")
+          done
+          printf '%s\n' "${files[@]}"
+          test ${#files[@]} -gt 0
+          gh release upload "$TAG" "${files[@]}" --clobber
+
+  publish:
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "${{ needs.version.outputs.tag }}" --repo "$GITHUB_REPOSITORY" --draft=false --latest

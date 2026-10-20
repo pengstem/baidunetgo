@@ -20,6 +20,8 @@ go tool mygo build                    # package for this platform into build/
 CGO_ENABLED=0 GOOS=windows go build -o /dev/null .   # cross-compile check
 ```
 
+**Releases.** Every push to `main` releases (`.github/workflows/release.yml`): tests, then `go run ./tools/release` picks the version (last tag + patch; `#minor`/`#major` in a commit, or a higher version set by hand in `mygo.json`) and writes its `CHANGELOG.md` section (the `## Unreleased` notes if any, else the commits grouped 新增/修复/改进), then the workflow pushes a `Release vX.Y.Z [skip ci]` commit and tag to main, builds Linux/Windows on Ubuntu and `darwin/universal` on macOS, uploads to the release and publishes it. So `git pull --rebase` before pushing. The repo is private, so MyGo's self-updater (`updates` in `mygo.json`, which needs a public repo) is not set up.
+
 Dev-only environment variables (see `capture.go`, `app/app.go`, `app/session.go`):
 - `BAIDUNETGO_FAKE=1`: sign in to `internal/fakepan` instead of Baidu.
 - `BAIDUNETGO_ROUTE=/files/照片`: router start page.

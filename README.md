@@ -36,6 +36,15 @@ go tool mygo build          # 打包当前平台（Linux 产出 .deb / tar.gz）
 
 依赖：Go 1.27+；Linux 需要 GTK 3；播放视频需要安装 mpv（或在设置中指定路径）。代码不使用 cgo，可以从任意平台交叉编译到 Windows / macOS / Linux。
 
+### 发布
+
+每次推送到 `main` 都会自动发版（`.github/workflows/release.yml`）：跑测试 → 版本号自动加一 → 把更新说明写进 [CHANGELOG.md](CHANGELOG.md) 并提交、打 tag → 在 GitHub 上打包 Linux（amd64 / arm64 的 .deb 与 tar.gz）、Windows（amd64 / arm64 安装包与免安装 zip）、macOS（通用版 .dmg）→ 发布 Release。
+
+- 默认升补丁位（0.1.0 → 0.1.1）；提交信息里写 `#minor` / `#major` 升次版本 / 主版本，或在 Actions 里手动 Run workflow 选择；直接改 `mygo.json` 的 `version` 则用你写的版本。
+- 更新说明：`CHANGELOG.md` 的 `## Unreleased` 下写了内容就用它，否则按提交记录自动分成「新增 / 修复 / 改进」。
+- 只改了 Markdown / docs，或最后一个提交带 `[skip release]`，不发版。
+- 发版会往 `main` 推一个 `Release vX.Y.Z` 提交，本地推送前先 `git pull --rebase`。
+
 ### 目录
 
 | 路径 | 内容 |
@@ -48,6 +57,7 @@ go tool mygo build          # 打包当前平台（Linux 产出 .deb / tar.gz）
 | `internal/transfer` | 下载 / 上传队列 |
 | `internal/pcsport` | 移植自 BaiduPCS-Go internal 的上传流程 |
 | `internal/fakepan` | 测试与演示用的假网盘服务 |
+| `tools/release` | 发版：算版本号、写更新日志 |
 
 ## 致谢
 
