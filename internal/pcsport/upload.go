@@ -11,13 +11,13 @@ import (
 	"context"
 	"crypto/md5"
 	"crypto/rand"
-	"crypto/tls"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"path"
 	"strconv"
 	"strings"
@@ -27,7 +27,6 @@ import (
 
 	"github.com/qjfoidnh/BaiduPCS-Go/baidupcs"
 	"github.com/qjfoidnh/BaiduPCS-Go/baidupcs/pcserror"
-	"github.com/qjfoidnh/BaiduPCS-Go/pcsutil/checksum"
 	"github.com/qjfoidnh/BaiduPCS-Go/requester"
 	"github.com/qjfoidnh/BaiduPCS-Go/requester/multipartreader"
 	"github.com/qjfoidnh/BaiduPCS-Go/requester/rio"
@@ -46,44 +45,48 @@ const sliceContent = 4 << 10
 // Upload sends a local file to savePath of the netdisk, by its checksums
 // when the netdisk already has its content.
 func Upload(ctx context.Context, pcs *baidupcs.BaiduPCS, local, savePath string, parallel int, progress Progress) error {
-	lfc := checksum.NewLocalFileChecksum(local, int(baidupcs.SliceMD5Size))
-	if err := lfc.OpenPath(); err != nil {
+	f, err := os.Open(local)
+	if err != nil {
 		return err
 	}
-	defer lfc.Close()
-	size := lfc.Length
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	size := info.Size()
 	if progress != nil {
 		progress(0, size)
 	}
 
 	// Rapid upload: the netdisk links content it already has.
-	if err := lfc.Sum(checksum.CHECKSUM_MD5 | checksum.CHECKSUM_SLICE_MD5 | checksum.CHECKSUM_CRC32); err != nil {
+	blockSize := blockSizeFor(size)
+	sum, err := checksums(ctx, f, size, blockSize)
+	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		return fmt.Errorf("计算校验和失败：%w", err)
-	}
-	if ctx.Err() != nil {
-		return ctx.Err()
 	}
 	uk, perr := pcs.CacheUK()
 	if perr != nil {
 		return fmt.Errorf("获取用户信息失败：%w", perr)
 	}
-	md5hex := hex.EncodeToString(lfc.MD5)
+	md5hex := hex.EncodeToString(sum.md5)
 	now := time.Now().Unix()
 	offset, err := dataOffset(md5hex, uk, now, size, sliceContent)
 	if err != nil {
 		return err
 	}
-	content, length, err := lfc.GetSliceDataContent(offset, sliceContent)
-	if err != nil {
+	content := make([]byte, sliceContent)
+	n, err := f.ReadAt(content, offset)
+	if err != nil && err != io.EOF {
 		return err
 	}
+	content, length := content[:n], int64(n)
 	b64 := strings.TrimRight(base64.StdEncoding.EncodeToString(content), "=")
-	blockSize := blockSizeFor(size)
-	if err := lfc.CalculateChunkedSum(blockSize); err != nil {
-		return fmt.Errorf("计算分块校验和失败：%w", err)
-	}
-	perr, res := pcs.RapidUpload(savePath, baidupcs.OverWritePolicy, "", md5hex, hex.EncodeToString(lfc.SliceMD5), b64,
-		strconv.FormatUint(uint64(lfc.CRC32), 10), offset, length, size, now, lfc.BlocksList)
+	perr, res := pcs.RapidUpload(savePath, baidupcs.OverWritePolicy, "", md5hex, hex.EncodeToString(sum.slice), b64,
+		strconv.FormatUint(uint64(sum.crc32), 10), offset, length, size, now, sum.blocks)
 	if perr != nil {
 		switch perr.GetRemoteErrCode() {
 		case 114514, 1919810:
@@ -102,7 +105,7 @@ func Upload(ctx context.Context, pcs *baidupcs.BaiduPCS, local, savePath string,
 
 	// The parts, then joined.
 	mu := uploader.NewMultiUploader(&partUpload{pcs: pcs, target: savePath, client: uploadClient(pcs)},
-		rio.NewFileReaderAtLen64(lfc.GetFile()),
+		rio.NewFileReaderAtLen64(f),
 		&uploader.MultiUploaderConfig{Parallel: max(parallel, 1), BlockSize: blockSize, Policy: baidupcs.OverWritePolicy}, savePath)
 	mu.SetInstanceState(&uploader.InstanceState{Uploadid: res.UploadID})
 	var upErr error
@@ -135,14 +138,14 @@ type partUpload struct {
 	client *requester.HTTPClient
 }
 
+// uploadClient sends parts over the session's transport, with a longer
+// timeout for a whole part.
 func uploadClient(pcs *baidupcs.BaiduPCS) *requester.HTTPClient {
 	c := requester.NewHTTPClient()
 	c.SetCookiejar(pcs.GetClient().Jar)
 	c.SetTimeout(200 * time.Second)
-	c.SetKeepAlive(true)
-	if tr, ok := c.Client.Transport.(*http.Transport); ok {
-		tr.TLSClientConfig = &tls.Config{}
-	}
+	c.SetKeepAlive(true) // makes the library's transport, which we replace
+	c.Client.Transport = pcs.GetClient().Client.Transport
 	return c
 }
 
