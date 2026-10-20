@@ -4,6 +4,12 @@
 
 <!-- 写在这里的内容会成为下一个版本的更新说明；留空则按提交记录自动生成。 -->
 
+## [0.4.0] - 2026-10-20
+
+### 改进
+
+- Files come and go through specks drawn with MyGo's shaders: a deleted row breaks into specks of itself that drift up and away before the rows close up, an upload shows in its folder at once as a cloud of specks that settles into its row as its bytes go up, files dragged over the browser light a ring of flowing color that flares as they drop, and thumbnails on their way shimmer as one wave across the window; the specks search only the cells that can reach a pixel and the shimmer is a plain fill apiece, so a 20-row delete draws in about 2 ms a frame
+
 ## [0.3.0] - 2026-10-20
 
 ### 改进
