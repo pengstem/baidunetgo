@@ -19,6 +19,7 @@ go vet ./... && gofmt -l .
 go tool mygo build                    # package for this platform into build/
 go tool mygo build -sign "BaiduNetGo Dev"   # same, signed with a fixed self-signed cert so the keychain's "Always Allow" survives rebuilds
 CGO_ENABLED=0 GOOS=windows go build -o /dev/null .   # cross-compile check
+go run ./tools/appicon                # redraw the app icon, resources/icon.png, which mygo build packages
 ```
 
 **Releases.** Every push to `main` releases (`.github/workflows/release.yml`): tests, then `go run ./tools/release` picks the version (last tag + patch; `#minor`/`#major` in a commit, or a higher version set by hand in `mygo.json`) and writes its `CHANGELOG.md` section (the `## Unreleased` notes if any, else the commits grouped 新增/修复/改进), then the workflow pushes a `Release vX.Y.Z [skip ci]` commit and tag to main, builds Linux/Windows on Ubuntu and `darwin/universal` on macOS, uploads to the release and publishes it. So `git pull --rebase` before pushing. The repo is private, so MyGo's self-updater (`updates` in `mygo.json`, which needs a public repo) is not set up.
