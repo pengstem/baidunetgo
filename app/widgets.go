@@ -88,7 +88,9 @@ func numberField(c *ui.Context, t *ui.Theme, p *palette, value *float64, lo, hi,
 	format := func(v float64) string { return strconv.FormatFloat(v, 'f', 0, 64) }
 	text := ui.Local(row, "text", func() string { return format(*value) })
 	row.Children(func() {
-		in := ui.TextInput(c, text).Label(label).Width(56).Height(24).TextAlign(ui.End).FontFeatures("tnum")
+		// No padding above or below: the input centers its line only in
+		// a box taller than it, and 24 less the theme's padding is not.
+		in := ui.TextInput(c, text).Label(label).Width(56).Height(24).Padding(0, 6).TextAlign(ui.Center).FontFeatures("tnum")
 		if in.Changed() {
 			if v, err := strconv.ParseFloat(strings.TrimSpace(*text), 64); err == nil && v >= lo && v <= hi && v != *value {
 				*value, changed = v, true

@@ -13,20 +13,23 @@ func (a *App) profile(c *ui.Context, t *ui.Theme, p *palette) {
 		return
 	}
 	ui.Row(c).Padding(8, 10, 12).Gap(4).AlignItems(ui.Center).Children(func() {
-		card := ui.ButtonBase(c).Label("账户").Column().Grow(1).Shrink(1).AlignItems(ui.Start).Padding(4, 6).Radius(6).Gap(1)
+		card := ui.ButtonBase(c).Label("账户").Grow(1).Shrink(1).Justify(ui.Start).AlignItems(ui.Center).Padding(4, 6).Radius(6).Gap(8)
 		if card.Hovered() || a.profileOpen {
 			card.Background(p.Hover)
 		}
 		card.Children(func() {
-			ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, s.user.Name).FontSize(12).FontWeight(600).SingleLine().Shrink(1)
-				if v := s.user.VIPLabel(); v != "" {
-					chip(c, v, p.VIP).FontSize(9).Padding(0, 5)
+			avatar(c, t, s, 28)
+			ui.Column(c).Shrink(1).Gap(1).Children(func() {
+				ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
+					ui.Text(c, s.user.Name).FontSize(12).FontWeight(600).SingleLine().Shrink(1)
+					if v := s.user.VIPLabel(); v != "" {
+						chip(c, v, p.VIP).FontSize(9).Padding(0, 5)
+					}
+				})
+				if q := s.quota; q.Total > 0 {
+					figure(c, "已用 "+humanSize(q.Used)+" / "+humanSize(q.Total)).FontSize(11).TextColor(t.TextMuted)
 				}
 			})
-			if q := s.quota; q.Total > 0 {
-				figure(c, "已用 "+humanSize(q.Used)+" / "+humanSize(q.Total)).FontSize(11).TextColor(t.TextMuted)
-			}
 		})
 		if card.Clicked() {
 			a.profileOpen = !a.profileOpen
@@ -70,6 +73,18 @@ func (a *App) profile(c *ui.Context, t *ui.Theme, p *palette) {
 		if gear.Clicked() && a.router.Path() != "/settings" {
 			a.router.Push("/settings")
 		}
+	})
+}
+
+// avatar is the profile photo of who is signed in, round, a person on the
+// accent color until it has arrived or when there is none.
+func avatar(c *ui.Context, t *ui.Theme, s *session, size float32) {
+	ui.Box(c).Size(size, size).Radius(size / 2).Center().Shrink(0).Clip().Background(t.Accent).Children(func() {
+		if s.avatar != nil {
+			ui.Image(c, s.avatar).Fill().Fit(ui.Cover).Transition(ui.ElementTransition{Enter: &ui.Motion{Opacity: 0}, Animation: &motionFade})
+			return
+		}
+		ui.Icon(c, icon("user")).FontSize(size / 2).TextColor(t.AccentText)
 	})
 }
 

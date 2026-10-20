@@ -123,13 +123,13 @@ func (a *App) tuneSection(c *ui.Context, t *ui.Theme, p *palette) {
 	s := &a.settings
 	cfg := a.transferConfig()
 	section(c, t, p, "传输", func() {
-		settingRow(c, t, p, "folder", tileBlue, "下载位置", tildePath(s.downloadDir()), func() {
+		settingRow(c, t, p, "下载位置", tildePath(s.downloadDir()), func() {
 			if pill(c, t, p, "", "更改…", false).Clicked() {
 				a.pickDownloadDir()
 			}
 		})
 		auto := !s.Manual
-		settingRow(c, t, p, "sparkles", tilePurple, "自动优化传输", "按实测选线路、连接数、块大小", func() {
+		settingRow(c, t, p, "自动优化传输", "按实测选线路、连接数、块大小", func() {
 			if ui.Switch(c, &auto).Label("自动优化传输").Changed() {
 				s.Manual = !auto
 				if !s.Manual {
@@ -159,19 +159,19 @@ func (a *App) tuneSection(c *ui.Context, t *ui.Theme, p *palette) {
 		if !auto && a.vip() == 0 {
 			threadsDetail += " · 非会员建议 1–4"
 		}
-		settingRow(c, t, p, "download", tileGreen, "每个文件的连接数", threadsDetail, func() {
+		settingRow(c, t, p, "每个文件的连接数", threadsDetail, func() {
 			if numberField(c, t, p, &threads, 1, 64, 1, "", "每个文件的连接数") {
 				s.Threads, s.Parallel, s.Upload = int(threads), cfg.Parallel, cfg.Upload
 				manual()
 			}
 		})
-		settingRow(c, t, p, "layers", tileOrange, "同时传输的文件数", chosen, func() {
+		settingRow(c, t, p, "同时传输的文件数", chosen, func() {
 			if numberField(c, t, p, &parallel, 1, 6, 1, "", "同时传输的文件数") {
 				s.Threads, s.Parallel, s.Upload = cfg.Threads, int(parallel), cfg.Upload
 				manual()
 			}
 		})
-		settingRow(c, t, p, "upload", tileTeal, "每个上传的连接数", chosen, func() {
+		settingRow(c, t, p, "每个上传的连接数", chosen, func() {
 			if numberField(c, t, p, &upload, 1, 32, 1, "", "每个上传的连接数") {
 				s.Threads, s.Parallel, s.Upload = cfg.Threads, cfg.Parallel, int(upload)
 				manual()
@@ -208,7 +208,7 @@ func (a *App) tuneResult(c *ui.Context, t *ui.Theme, p *palette, cfg tune.Config
 		detail = humanTime(r.At.Unix(), c.Now()) + " · 约 " + humanSpeed(r.Total(cfg))
 	}
 	ui.Column(c).Children(func() {
-		settingRow(c, t, p, "gauge", tileOrange, "实测速度", detail, func() {
+		settingRow(c, t, p, "实测速度", detail, func() {
 			if r != nil {
 				d := ui.ButtonBase(c).Label("详情").Height(28).PaddingX(8).Radius(7).Gap(3).AlignItems(ui.Center).TextColor(t.TextMuted)
 				if d.Hovered() {
@@ -234,7 +234,7 @@ func (a *App) tuneResult(c *ui.Context, t *ui.Theme, p *palette, cfg tune.Config
 		if r == nil || !a.tuneOpen {
 			return
 		}
-		ui.Column(c).Gap(12).Padding(4, 0, 14, 36).Transition(rowEnter).Children(func() {
+		ui.Column(c).Gap(12).Padding(4, 0, 14).Transition(rowEnter).Children(func() {
 			row := 0
 			group := func(title, note string, bars []tuneBar) {
 				if len(bars) == 0 {
