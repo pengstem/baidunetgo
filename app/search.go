@@ -82,6 +82,9 @@ func (a *App) searchPage(c *ui.Context, t *ui.Theme, p *palette, q string) {
 					if m.Item("在所在文件夹中显示").Chosen() {
 						a.router.Push(filesRoute(path.Dir(f.Path)))
 					}
+					if m.Item("显示详情").Chosen() {
+						a.showInfo(path.Dir(f.Path), []baidu.File{f})
+					}
 				})
 			})
 			list.Grow(1).Padding(4, 10, 20)

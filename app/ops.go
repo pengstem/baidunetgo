@@ -26,6 +26,7 @@ const (
 	dlgShare
 	dlgSaveLink
 	dlgOffline
+	dlgInfo
 )
 
 // dialog is the dialog over the window, if any.
@@ -163,6 +164,8 @@ func (a *App) dialogs(c *ui.Context, t *ui.Theme, p *palette) {
 			a.saveLinkDialog(c, t, p)
 		case dlgOffline:
 			a.offlineDialog(c, t, p)
+		case dlgInfo:
+			a.infoDialog(c, t, p)
 		}
 	})
 	if open && !d.open && d.busy {
@@ -285,6 +288,9 @@ func (a *App) fileActions(c *ui.Context, l *listing) {
 	if c.Shortcut(0, ui.KeyDelete) || c.Shortcut(ui.Cmd, ui.KeyBackspace) {
 		a.ask(dlgDelete, l.dir, files)
 	}
+	if c.Shortcut(ui.Cmd, ui.KeyI) {
+		a.showInfo(l.dir, files)
+	}
 	if c.Shortcut(0, ui.KeyEscape) {
 		l.sel.Clear()
 	}
@@ -329,6 +335,9 @@ func (a *App) selectionBar(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 		}
 		if len(files) == 1 && action("pencil", "重命名") {
 			a.ask(dlgRename, l.dir, files)
+		}
+		if action("info", "详情") {
+			a.showInfo(l.dir, files)
 		}
 		del := ui.ButtonBase(c).Label("删除").Height(28).PaddingX(10).Radius(7).Gap(6).AlignItems(ui.Center).TextColor(t.Danger)
 		if del.Hovered() {
