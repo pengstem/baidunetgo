@@ -2,5 +2,8 @@
   "name": "BaiduNetGo",
   "identifier": "com.pengstem.baidunetgo",
   "version": "0.4.2",
-  "out": "build"
+  "out": "build",
+  "macos": {
+    "entitlements": "entitlements.plist"
+  }
 }

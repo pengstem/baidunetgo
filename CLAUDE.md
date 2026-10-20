@@ -17,6 +17,7 @@ go test -tags live ./internal/baidu -run Live -v   # real netdisk: QR endpoint, 
 BAIDUNETGO_SELFTEST=report.json BAIDUNETGO_PROBE=1 go run .   # self-test every feature against the real account, plus a speed probe
 go vet ./... && gofmt -l .
 go tool mygo build                    # package for this platform into build/
+go tool mygo build -sign "BaiduNetGo Dev"   # same, signed with a fixed self-signed cert so the keychain's "Always Allow" survives rebuilds
 CGO_ENABLED=0 GOOS=windows go build -o /dev/null .   # cross-compile check
 ```
 
@@ -60,7 +61,7 @@ Dev-only environment variables (see `capture.go`, `app/app.go`, `app/session.go`
 
 **Transfers (`internal/transfer`).** `Manager` is a queue run by `Parallel`. Downloads fetch 4 MB blocks over `Threads` connections into `<file>.bngdl`, with a `.bngdl.json` sidecar of finished blocks for resume. Task state persists to `transfers.json` in the user data dir. `OnChange`/`OnFinish` are called outside the manager's lock and read tasks back through `Tasks()`. Don't call them while holding `m.mu`: that deadlocked once.
 
-**Session storage (`internal/auth`).** Credentials are AES-GCM encrypted in `session.enc` under the user data dir. The key lives in `mygo.Secrets` (the system keyring), with a 0600 key-file fallback. Settings are plain JSON (`app/settings.go`).
+**Session storage (`internal/auth`).** Credentials are AES-GCM encrypted in `session.enc` under the user data dir. The key lives in `mygo.Secrets` (the system keyring), with a 0600 key-file fallback. macOS ties the keychain's "Always Allow" to the code signature, and an ad-hoc signature changes with every build, so each rebuild asks again unless it is signed with a fixed identity (`-sign`). A real identity turns on the hardened runtime, under which wazero's compiled code (PDFium) is killed: `entitlements.plist` grants `allow-unsigned-executable-memory` for it. Settings are plain JSON (`app/settings.go`).
 
 ## MyGo UI gotchas found here
 
