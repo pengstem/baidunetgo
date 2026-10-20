@@ -4,6 +4,12 @@
 
 <!-- 写在这里的内容会成为下一个版本的更新说明；留空则按提交记录自动生成。 -->
 
+## [0.4.3] - 2026-10-20
+
+### 改进
+
+- Sign macOS builds with entitlements that let wazero run its compiled code under the hardened runtime, which a fixed signing identity (-sign, so the keychain's Always Allow survives rebuilds) turns on and which otherwise kills the app as PDFium renders; note how to build signed
+
 ## [0.4.2] - 2026-10-20
 
 ### 改进
