@@ -4,6 +4,17 @@
 
 <!-- 写在这里的内容会成为下一个版本的更新说明；留空则按提交记录自动生成。 -->
 
+## [0.1.1] - 2026-10-20
+
+### 改进
+
+- Ask in CLAUDE.md for each finished task to be committed and pushed without being asked, the push releasing it with the next version
+- Expect the netdisk client's v10 STOKEN opened only on Linux, as ReadNetdisk does, so the tests pass on macOS too
+- Lay out the grid view in the app instead of ui.GridView, which builds each line as an element: a tile that a resize moved to another line was built anew and jumped there; now every tile is keyed by its file under one parent and glides from where it showed to its new cell, while resizing too
+- Restyle as a native macOS app modeled on Pulse: the window's sidebar material, pages on colored tiles, the system typeface instead of IBM Plex, gray groups and striped rows; redo settings with an icon tile on every row, compact number fields with steppers, the speed measurement folded behind 详情 and a storage bar under the account
+- Read a file once for every checksum a rapid upload needs, the whole-file MD5 alongside the CRC32 and block MD5s while the next chunk is read, instead of BaiduPCS-Go's checksum package
+- Give the netdisk session its own HTTP transport: check certificates, dial with the request's context and timeouts, and spread connections over a host's addresses instead of the library's transport that skipped all three
+
 ## [0.1.0] - 2026-10-20
 
 首个版本。
