@@ -124,17 +124,17 @@ func (a *App) loginView(c *ui.Context, t *ui.Theme, p *palette) {
 		l.qr, l.qrLoading = nil, false
 	}
 
-	bar := c.TitleBar()
 	root := ui.Box(c).Fill().Background(t.Background).Clip()
 	root.Children(func() {
 		// The top drags the window.
-		ui.Box(c).Absolute().Top(0).Left(0).Right(0).Height(max(bar.Height, titleBarMin)).DragWindow()
+		ui.Box(c).Absolute().Top(0).Left(0).Right(0).Height(barHeight(c)).DragWindow()
 
 		ui.Column(c).Absolute().Top(0).Left(0).Right(0).Bottom(0).Center().Children(func() {
 			ui.Column(c).Key("login").Width(324).Gap(20).AlignItems(ui.Center).Transition(popIn).Children(func() {
-				ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
-					logoMark(c, t, p, 22)
-					ui.Text(c, "登录百度网盘").FontSize(17).FontWeight(600)
+				ui.Column(c).Gap(8).AlignItems(ui.Center).Children(func() {
+					logoMark(c, t, p, 56).Margin(0, 0, 6)
+					ui.Text(c, "登录百度网盘").FontSize(20).FontWeight(700)
+					ui.Text(c, "用百度网盘 App 扫一扫，或粘贴 Cookie").FontSize(12).TextColor(t.TextMuted)
 				})
 				if l.tab == 0 {
 					ui.Column(c).Key("qr").AlignItems(ui.Center).Gap(14).Transition(popIn).Children(func() {
@@ -184,7 +184,8 @@ func (a *App) loginLinks(c *ui.Context, t *ui.Theme, p *palette) {
 
 func (a *App) qrPanel(c *ui.Context, t *ui.Theme, p *palette) {
 	l := &a.login
-	frame := ui.Box(c).Size(184, 184).Radius(5).Padding(10).Background(ui.Hex("#ffffff")).Clip()
+	frame := ui.Box(c).Size(196, 196).Radius(16).Padding(14).Background(ui.Hex("#ffffff")).Clip().
+		Border(1, p.Hairline).Shadow(0, 8, 28, -10, p.Shadow)
 	frame.Children(func() {
 		switch {
 		case l.qr != nil:
@@ -234,7 +235,7 @@ func (a *App) qrOverlay(c *ui.Context, t *ui.Theme, p *palette) {
 	ui.Column(c).Key(label).Absolute().Top(0).Left(0).Right(0).Bottom(0).Center().Gap(8).
 		Transition(popIn).Children(func() {
 		if label == "刷新二维码" {
-			btn := ui.ButtonBase(c).Label(label).Height(30).PaddingX(12).Radius(5).Gap(6).AlignItems(ui.Center).
+			btn := ui.ButtonBase(c).Label(label).Height(28).PaddingX(12).Radius(7).Gap(6).AlignItems(ui.Center).
 				Background(lightTheme.Accent).TextColor(lightTheme.AccentText)
 			if btn.Hovered() {
 				btn.Background(lightTheme.AccentHover)
@@ -259,7 +260,7 @@ func (a *App) qrOverlay(c *ui.Context, t *ui.Theme, p *palette) {
 func (a *App) cookiePanel(c *ui.Context, t *ui.Theme, p *palette) {
 	l := &a.login
 	ui.Text(c, "粘贴 pan.baidu.com 的 Cookie，或 BDUSS 与 STOKEN").TextColor(t.TextMuted)
-	in := ui.TextArea(c, &l.cookie).Placeholder("BDUSS=…; STOKEN=…").Lines(4, 6).Font(fontMono).
+	in := ui.TextArea(c, &l.cookie).Placeholder("BDUSS=…; STOKEN=…").Lines(4, 6).Font("monospace").
 		FontSize(12).Label("Cookie")
 	if l.err != "" {
 		in.Error(l.err)
@@ -278,7 +279,7 @@ func (a *App) cookiePanel(c *ui.Context, t *ui.Theme, p *palette) {
 		l.err, l.busy = "", true
 		go a.signIn(cr, true)
 	}
-	ui.Text(c, "加密保存在本机，密钥在系统钥匙串").TextColor(p.Faint).FontSize(12)
+	ui.Text(c, "加密保存在本机，密钥在系统钥匙串").TextColor(t.TextMuted).FontSize(11)
 }
 
 // migrateNow signs in with the first of the other clients' accounts that
@@ -287,4 +288,28 @@ func (a *App) migrateNow(accs []migrate.Account) {
 	if !a.migrate(accs, "") {
 		a.signInFailed(errors.New("其他客户端的登录已失效"), true)
 	}
+}
+
+// logoMark is the app's mark, as an app icon: four blocks on a tile of
+// the accent color, the last one still coming, as the downloads fetch
+// theirs.
+func logoMark(c *ui.Context, t *ui.Theme, p *palette, size float32) ui.Element {
+	cell := size * 0.22
+	gap := size * 0.08
+	top, bottom := ui.Hex("#3d9bff"), ui.Hex("#0062e0")
+	return ui.Box(c).Size(size, size).Draw(func(pt *ui.Painter, r ui.Rect) {
+		pt.Shadow(r, size*0.24, 0, size*0.04, size*0.12, 0, p.Shadow)
+		pt.FillGradient(r, ui.LinearGradient{From: top, To: bottom, Angle: 180}, size*0.24)
+		x0 := r.X + (r.W-2*cell-gap)/2
+		y0 := r.Y + (r.H-2*cell-gap)/2
+		for i := range 4 {
+			color := ui.Hex("#ffffff")
+			if i == 3 {
+				color = color.Alpha(0.5)
+			}
+			x := x0 + float32(i%2)*(cell+gap)
+			y := y0 + float32(i/2)*(cell+gap)
+			pt.Fill(ui.Rect{X: x, Y: y, W: cell, H: cell}, color, size*0.04)
+		}
+	})
 }

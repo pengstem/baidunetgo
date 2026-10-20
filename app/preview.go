@@ -347,7 +347,7 @@ func previewScrim(t *ui.Theme) ui.Color {
 func (a *App) previewBar(c *ui.Context, t *ui.Theme, p *palette, pv *previewState) {
 	bar := c.TitleBar()
 	white := ui.Hex("#ecece8")
-	ui.Row(c).Height(max(bar.Height, titleBarMin) + 8).PaddingStart(max(bar.Left, 0) + 20).PaddingEnd(bar.Right + 8).
+	ui.Row(c).Height(barHeight(c)).PaddingStart(max(bar.Left, 0) + 20).PaddingEnd(bar.Right + 8).
 		Gap(12).AlignItems(ui.Center).TextColor(white).DragWindow().
 		Transition(ui.ElementTransition{Animation: &motionPanel, Enter: &ui.Motion{Y: -12, Opacity: 0}}).Children(func() {
 		lk := pv.kind.look(p)
@@ -410,7 +410,7 @@ func (a *App) previewBar(c *ui.Context, t *ui.Theme, p *palette, pv *previewStat
 
 // glassButton is a round icon button over the dark preview backdrop.
 func glassButton(c *ui.Context, ic, label string) ui.Element {
-	b := ui.ButtonBase(c).Label(label).Tooltip(label).Size(32, 32).Radius(5).Center().
+	b := ui.ButtonBase(c).Label(label).Tooltip(label).Size(32, 32).Radius(16).Center().
 		TextColor(ui.Hex("#ecece8"))
 	bg := ui.RGBA(255, 255, 255, 0.08)
 	if b.Pressed() {

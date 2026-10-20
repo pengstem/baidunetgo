@@ -50,6 +50,7 @@ type App struct {
 	tuning        bool   // measuring download speeds
 	tuneErr       string // why the last measurement failed
 	tuneStage     string // what the measurement measures now
+	tuneOpen      bool   // the measurement's details unfolded in settings
 	transfers     transfersState
 	shareForm     shareForm
 	shares        sharesState

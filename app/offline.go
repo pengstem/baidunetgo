@@ -74,27 +74,24 @@ func (a *App) offlinePage(c *ui.Context, t *ui.Theme, p *palette) {
 		default:
 			ui.List(c, &o.list, len(o.items), func(i int) {
 				it := o.items[i]
-				row := ui.Row(c.Key(it.ID)).Height(66).PaddingX(12).Gap(14).AlignItems(ui.Center).Radius(5)
-				if row.Hovered() {
-					row.Background(p.Hover)
-				}
+				row := stripe(ui.Row(c.Key(it.ID)).MinHeight(48).Padding(8, 10).Gap(10).AlignItems(ui.Center), p, i)
 				f := baidu.File{Name: it.Name, Path: it.SavePath + "/" + it.Name}
 				row.Children(func() {
-					a.fileIcon(c, t, p, &f, 38)
-					ui.Column(c).Grow(1).Shrink(1).Gap(6).Children(func() {
-						ui.Text(c, it.Name).FontWeight(500).SingleLine()
+					a.fileIcon(c, t, p, &f, 28)
+					ui.Column(c).Grow(1).Shrink(1).Gap(4).Children(func() {
+						ui.Text(c, it.Name).SingleLine()
 						if it.Status == 1 {
 							frac := float32(0)
 							if it.Size > 0 {
 								frac = float32(float64(it.Done) / float64(it.Size))
 							}
-							ui.Box(c).Height(4).Radius(2).Background(p.Hairline).Clip().Children(func() {
-								bar := ui.Box(c).Height(4).Radius(2).Background(t.Accent)
+							ui.Box(c).Height(5).Radius(3).Background(p.Control).Clip().Children(func() {
+								bar := ui.Box(c).Height(5).Radius(3).Background(t.Accent)
 								bar.WidthPercent(bar.AnimateTo("p", frac*100, motionPanel))
 							})
 						}
 						detail := it.StatusText() + " · " + humanSize(it.Size) + " · 保存到 " + dirLabel(it.SavePath)
-						ui.Text(c, detail).FontSize(t.Rem(0.84)).TextColor(t.TextMuted).SingleLine()
+						figure(c, detail).FontSize(11).TextColor(t.TextMuted)
 					})
 					switch it.Status {
 					case 0:
@@ -110,7 +107,7 @@ func (a *App) offlinePage(c *ui.Context, t *ui.Theme, p *palette) {
 						a.offlineAct(it, true)
 					}
 				})
-			}).Grow(1).Padding(4, 12, 24)
+			}).Grow(1).Padding(4, 10, 20)
 		}
 	})
 }
@@ -156,7 +153,7 @@ func (a *App) offlineDialog(c *ui.Context, t *ui.Theme, p *palette) {
 
 // offlineToolbar is the title bar's controls on the offline page.
 func (a *App) offlineToolbar(c *ui.Context, t *ui.Theme, p *palette) {
-	if iconButton(c, t, p, "refresh-cw", "刷新").Clicked() {
+	if toolButton(c, t, p, "refresh-cw", "刷新").Clicked() {
 		a.loadOffline()
 	}
 	if pill(c, t, p, "plus", "新建任务", true).Clicked() {

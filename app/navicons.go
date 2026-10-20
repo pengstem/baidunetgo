@@ -15,7 +15,7 @@ import (
 func navGlyph(pt *ui.Painter, r ui.Rect, page string, ms float32, color ui.Color) {
 	size := min(r.W, r.H)
 	g := glyph{pt: pt, x: r.X + (r.W-size)/2, y: r.Y + (r.H-size)/2, s: size / 24, color: color}
-	g.w = 1.8 * g.s
+	g.w = 2.2 * g.s
 	switch page {
 	case "/files":
 		// The front of the folder tips back from its bottom edge, as a

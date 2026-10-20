@@ -6,23 +6,27 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// The look follows the 刻度 design system: warm neutral grays, one sky
-// blue for what is happening (selection, progress, the main action), lines
-// rather than cards, and figures set in a monospaced face.
+// The look is that of a native macOS app, as Pulse's: the sidebar over
+// the window's translucent material, its pages marked by small tiles of
+// color, the system's typeface and blue, content on white with rounded
+// gray groups, and lists striped rather than ruled.
 
 // palette holds the colors of the app beyond those of the theme.
 type palette struct {
-	Sidebar  ui.Color // the sidebar's backdrop
+	Sidebar  ui.Color // the sidebar's backdrop where the window has no material
 	Card     ui.Color // dialogs, menus and popovers
-	Raised   ui.Color // the chosen sidebar row, segmented thumbs
+	Group    ui.Color // rounded groups on the content: settings, summaries
+	Control  ui.Color // the face of quiet buttons, fields and segmented tracks
+	Raised   ui.Color // the thumb of segmented controls
 	Hover    ui.Color // rows under the pointer
-	Selected ui.Color // chosen rows
+	Stripe   ui.Color // every other row of a list
+	Selected ui.Color // chosen rows while their list has not the focus
 	Scrim    ui.Color // behind dialogs and previews
 	Hairline ui.Color // separators and outlines
-	Faint    ui.Color // the quietest text: column heads, units, hints
-	Shadow   ui.Color // under dialogs only
+	Faint    ui.Color // the quietest text: section titles, units, hints
+	Shadow   ui.Color // under dialogs, menus and thumbs
 	Folder   ui.Color
-	VIP      ui.Color // membership labels, outlined
+	VIP      ui.Color // membership labels
 }
 
 var (
@@ -31,77 +35,81 @@ var (
 )
 
 func init() {
-	accentLight := ui.Hex("#0a6fb0")
-	accentDark := ui.Hex("#2aa8f2")
+	accentLight := ui.Hex("#007aff")
+	accentDark := ui.Hex("#0a84ff")
 
 	t := ui.LightTheme()
-	t.Background = ui.Hex("#fafaf8")
-	t.Surface = ui.Hex("#f0f0ec")
-	t.SurfaceHover = ui.Hex("#e8e8e3")
-	t.SurfacePressed = ui.Hex("#dfdfd9")
-	t.Border = ui.Hex("#e4e4df")
-	t.Text = ui.Hex("#1b1b19")
-	t.TextMuted = ui.Hex("#5e5e58")
+	t.Background = ui.Hex("#ffffff")
+	t.Surface = ui.Hex("#f2f2f4")
+	t.SurfaceHover = ui.Hex("#e8e8eb")
+	t.SurfacePressed = ui.Hex("#dddde1")
+	t.Border = ui.Hex("#e3e3e6")
+	t.Text = ui.Hex("#1d1d1f")
+	t.TextMuted = ui.Hex("#6e6e73")
 	t.Accent = accentLight
-	t.AccentHover = ui.Hex("#0a64a0")
-	t.AccentPressed = ui.Hex("#085a90")
+	t.AccentHover = ui.Hex("#006ee6")
+	t.AccentPressed = ui.Hex("#0062cc")
 	t.AccentText = ui.Hex("#ffffff")
-	t.Danger = ui.Hex("#d2402f")
-	t.Success = ui.Hex("#1f9d63")
-	t.Warning = ui.Hex("#b97a12")
-	t.Selection = accentLight.Alpha(0.2)
+	t.Danger = ui.Hex("#ff3b30")
+	t.Success = ui.Hex("#34c759")
+	t.Warning = ui.Hex("#ff9500")
+	t.Selection = accentLight.Alpha(0.22)
 	t.Focus = accentLight.Alpha(0.5)
-	t.Radius = 5
-	t.Font = fontSans
+	t.Radius = 6
 	t.FontSize = 13
 	lightTheme = t
 	lightPalette = palette{
-		Sidebar:  ui.Hex("#f2f2ef"),
+		Sidebar:  ui.Hex("#ececee"),
 		Card:     ui.Hex("#ffffff"),
-		Raised:   ui.Hex("#e6e6e1"),
-		Hover:    ui.RGBA(27, 27, 25, 0.045),
-		Selected: accentLight.Alpha(0.12),
-		Scrim:    ui.RGBA(20, 20, 18, 0.36),
-		Hairline: ui.Hex("#e4e4df"),
-		Faint:    ui.Hex("#6f6f69"),
-		Shadow:   ui.RGBA(20, 20, 18, 0.14),
-		Folder:   ui.Hex("#d4951f"),
-		VIP:      ui.Hex("#a8700c"),
+		Group:    ui.Hex("#f5f5f7"),
+		Control:  ui.Hex("#ececef"),
+		Raised:   ui.Hex("#ffffff"),
+		Hover:    ui.RGBA(0, 0, 0, 0.045),
+		Stripe:   ui.RGBA(0, 0, 0, 0.028),
+		Selected: ui.RGBA(0, 0, 0, 0.09),
+		Scrim:    ui.RGBA(0, 0, 0, 0.28),
+		Hairline: ui.Hex("#e5e5ea"),
+		Faint:    ui.Hex("#a1a1a6"),
+		Shadow:   ui.RGBA(0, 0, 0, 0.16),
+		Folder:   ui.Hex("#4aa8f0"),
+		VIP:      ui.Hex("#c27c0e"),
 	}
 
 	d := ui.DarkTheme()
-	d.Background = ui.Hex("#131312")
-	d.Surface = ui.Hex("#1f1f1e")
-	d.SurfaceHover = ui.Hex("#262625")
-	d.SurfacePressed = ui.Hex("#2c2c2a")
-	d.Border = ui.Hex("#2a2a28")
-	d.Text = ui.Hex("#ecece8")
-	d.TextMuted = ui.Hex("#a3a39d")
+	d.Background = ui.Hex("#1e1e1e")
+	d.Surface = ui.Hex("#2c2c2e")
+	d.SurfaceHover = ui.Hex("#353538")
+	d.SurfacePressed = ui.Hex("#3e3e41")
+	d.Border = ui.Hex("#3a3a3c")
+	d.Text = ui.Hex("#f5f5f7")
+	d.TextMuted = ui.Hex("#98989d")
 	d.Accent = accentDark
-	d.AccentHover = ui.Hex("#4db6f4")
-	d.AccentPressed = ui.Hex("#1e95db")
-	d.AccentText = ui.Hex("#061520")
-	d.Danger = ui.Hex("#ef6b5a")
-	d.Success = ui.Hex("#3fc28a")
-	d.Warning = ui.Hex("#e3a93b")
-	d.Selection = accentDark.Alpha(0.3)
+	d.AccentHover = ui.Hex("#2b95ff")
+	d.AccentPressed = ui.Hex("#0077e6")
+	d.AccentText = ui.Hex("#ffffff")
+	d.Danger = ui.Hex("#ff453a")
+	d.Success = ui.Hex("#30d158")
+	d.Warning = ui.Hex("#ff9f0a")
+	d.Selection = accentDark.Alpha(0.35)
 	d.Focus = accentDark.Alpha(0.6)
-	d.Radius = 5
-	d.Font = fontSans
+	d.Radius = 6
 	d.FontSize = 13
 	darkTheme = d
 	darkPalette = palette{
-		Sidebar:  ui.Hex("#191918"),
-		Card:     ui.Hex("#1c1c1b"),
-		Raised:   ui.Hex("#252524"),
-		Hover:    ui.RGBA(255, 255, 255, 0.04),
-		Selected: accentDark.Alpha(0.14),
-		Scrim:    ui.RGBA(0, 0, 0, 0.55),
-		Hairline: ui.Hex("#2a2a28"),
-		Faint:    ui.Hex("#858580"),
+		Sidebar:  ui.Hex("#262628"),
+		Card:     ui.Hex("#2a2a2c"),
+		Group:    ui.Hex("#252527"),
+		Control:  ui.Hex("#323235"),
+		Raised:   ui.Hex("#5a5a5e"),
+		Hover:    ui.RGBA(255, 255, 255, 0.05),
+		Stripe:   ui.RGBA(255, 255, 255, 0.03),
+		Selected: ui.RGBA(255, 255, 255, 0.1),
+		Scrim:    ui.RGBA(0, 0, 0, 0.5),
+		Hairline: ui.Hex("#38383a"),
+		Faint:    ui.Hex("#6e6e73"),
 		Shadow:   ui.RGBA(0, 0, 0, 0.45),
-		Folder:   ui.Hex("#e3a93b"),
-		VIP:      ui.Hex("#e3a93b"),
+		Folder:   ui.Hex("#5ab4f5"),
+		VIP:      ui.Hex("#ffb340"),
 	}
 }
 

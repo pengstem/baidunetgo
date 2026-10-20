@@ -29,15 +29,22 @@ func main() {
 	mygo.App.OnWillQuit(func(*mygo.QuitEvent) { a.Shutdown() })
 	mygo.App.WhenReady(func() {
 		win := mygo.NewWindow(mygo.WindowOptions{
-			Title:           "BaiduNetGo",
-			Width:           1180,
-			Height:          760,
-			MinWidth:        780,
-			MinHeight:       540,
-			StateKey:        "main",
-			TitleBarStyle:   mygo.TitleBarHidden,
-			BackgroundColor: "light-dark(#fafaf8, #131312)",
-			Content:         ui.View(a.View),
+			Title:     "BaiduNetGo",
+			Width:     1180,
+			Height:    760,
+			MinWidth:  780,
+			MinHeight: 540,
+			StateKey:  "main",
+			// A native window: the traffic lights inset over the sidebar,
+			// which shows the window's translucent material (macOS,
+			// Windows 11) where it draws no background.
+			// macOS takes the traffic lights' place rather than the
+			// height: 16 + 2×18 makes them a 52 DIP bar, centered in it.
+			TitleBarStyle:        mygo.TitleBarHiddenInset,
+			TrafficLightPosition: &mygo.Point{X: 20, Y: 18},
+			TitleBarHeight:       52,
+			Vibrancy:             mygo.VibrancySidebar,
+			Content:              ui.View(a.View),
 		})
 		a.Attach(win)
 		captureOnStart(win)

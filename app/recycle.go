@@ -62,22 +62,19 @@ func (a *App) recyclePage(c *ui.Context, t *ui.Theme, p *palette) {
 			now := c.Now()
 			ui.List(c, &r.list, len(r.items), func(i int) {
 				it := r.items[i]
-				row := ui.Row(c.Key(it.FsID)).Height(rowHeight).PaddingX(12).Gap(12).AlignItems(ui.Center).Radius(5)
-				if row.Hovered() {
-					row.Background(p.Hover)
-				}
+				row := stripe(ui.Row(c.Key(it.FsID)).Height(44).PaddingX(10).Gap(10).AlignItems(ui.Center), p, i)
 				row.Children(func() {
-					a.fileIcon(c, t, p, &it.File, 34)
-					ui.Column(c).Grow(1).Shrink(1).Gap(2).Children(func() {
-						ui.Text(c, it.Name).SingleLine().FontWeight(500)
+					a.fileIcon(c, t, p, &it.File, 28)
+					ui.Column(c).Grow(1).Shrink(1).Gap(1).Children(func() {
+						ui.Text(c, it.Name).SingleLine()
 						ui.Text(c, "原位置："+dirLabel(path.Dir(it.Path))+" · "+humanTime(it.Mtime, now)).
-							FontSize(t.Rem(0.84)).TextColor(t.TextMuted).SingleLine()
+							FontSize(11).TextColor(t.TextMuted).SingleLine()
 					})
-					days := ui.Text(c, itoa(it.LeftDays)+" 天后清除").FontSize(t.Rem(0.84)).Padding(2, 8).Radius(6)
+					days := itoa(it.LeftDays) + " 天后清除"
 					if it.LeftDays <= 3 {
-						days.Background(t.Warning.Alpha(0.14)).TextColor(t.Warning)
+						chip(c, days, t.Warning)
 					} else {
-						days.Background(t.Surface).TextColor(t.TextMuted)
+						figure(c, days).FontSize(12).TextColor(t.TextMuted)
 					}
 					if r.busy[it.FsID] {
 						ui.Spinner(c).Label("处理中")
@@ -94,7 +91,7 @@ func (a *App) recyclePage(c *ui.Context, t *ui.Theme, p *palette) {
 						a.recycleAct(it, true)
 					}
 				})
-			}).Grow(1).Padding(4, 12, 24)
+			}).Grow(1).Padding(4, 10, 20)
 		}
 	})
 	if r.confirm {
@@ -162,7 +159,7 @@ func (a *App) emptyRecycle() {
 
 // recycleToolbar is the title bar's controls on the recycle bin.
 func (a *App) recycleToolbar(c *ui.Context, t *ui.Theme, p *palette) {
-	if iconButton(c, t, p, "refresh-cw", "刷新").Clicked() {
+	if toolButton(c, t, p, "refresh-cw", "刷新").Clicked() {
 		a.loadRecycle()
 	}
 	if len(a.recycle.items) > 0 && pill(c, t, p, "trash-2", "清空回收站", false).Clicked() {

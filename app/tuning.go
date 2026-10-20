@@ -108,6 +108,9 @@ func (a *App) runTune(announce bool) {
 				a.toast("无法保存设置："+err.Error(), "error")
 			}
 			a.useSettings()
+			if announce {
+				a.tuneOpen = true
+			}
 			cfg := a.transferConfig()
 			a.toast("已根据测速优化：每个文件 "+itoa(cfg.Threads)+" 个连接，同时 "+itoa(cfg.Parallel)+" 个文件，约 "+humanSpeed(res.Total(cfg)), "success")
 		})
@@ -120,14 +123,13 @@ func (a *App) tuneSection(c *ui.Context, t *ui.Theme, p *palette) {
 	s := &a.settings
 	cfg := a.transferConfig()
 	section(c, t, p, "传输", func() {
-		settingRow(c, t, p, "下载位置", "", func() {
-			figure(c, tildePath(s.downloadDir())).FontSize(12).TextColor(t.TextMuted).MaxWidth(320)
+		settingRow(c, t, p, "folder", tileBlue, "下载位置", tildePath(s.downloadDir()), func() {
 			if pill(c, t, p, "", "更改…", false).Clicked() {
 				a.pickDownloadDir()
 			}
 		})
 		auto := !s.Manual
-		settingRow(c, t, p, "自动优化传输", "按实测选线路、连接数、块大小", func() {
+		settingRow(c, t, p, "sparkles", tilePurple, "自动优化传输", "按实测选线路、连接数、块大小", func() {
 			if ui.Switch(c, &auto).Label("自动优化传输").Changed() {
 				s.Manual = !auto
 				if !s.Manual {
@@ -149,24 +151,28 @@ func (a *App) tuneSection(c *ui.Context, t *ui.Theme, p *palette) {
 			a.applySettings()
 		}
 		threads, parallel, upload := float64(cfg.Threads), float64(cfg.Parallel), float64(cfg.Upload)
-		detail := ""
+		chosen := "自动"
 		if !auto {
-			detail = "非会员建议 1–4"
+			chosen = "手动"
 		}
-		settingRow(c, t, p, "每个文件的连接数", detail, func() {
-			if ui.NumberInput(c, &threads, 1, 64, 1).Font(fontMono).Label("连接数").Changed() {
+		threadsDetail := chosen
+		if !auto && a.vip() == 0 {
+			threadsDetail += " · 非会员建议 1–4"
+		}
+		settingRow(c, t, p, "download", tileGreen, "每个文件的连接数", threadsDetail, func() {
+			if numberField(c, t, p, &threads, 1, 64, 1, "", "每个文件的连接数") {
 				s.Threads, s.Parallel, s.Upload = int(threads), cfg.Parallel, cfg.Upload
 				manual()
 			}
 		})
-		settingRow(c, t, p, "同时传输的文件数", "", func() {
-			if ui.NumberInput(c, &parallel, 1, 6, 1).Font(fontMono).Label("同时传输数").Changed() {
+		settingRow(c, t, p, "layers", tileOrange, "同时传输的文件数", chosen, func() {
+			if numberField(c, t, p, &parallel, 1, 6, 1, "", "同时传输的文件数") {
 				s.Threads, s.Parallel, s.Upload = cfg.Threads, int(parallel), cfg.Upload
 				manual()
 			}
 		})
-		settingRow(c, t, p, "每个上传的连接数", "", func() {
-			if ui.NumberInput(c, &upload, 1, 32, 1).Font(fontMono).Label("上传连接数").Changed() {
+		settingRow(c, t, p, "upload", tileTeal, "每个上传的连接数", chosen, func() {
+			if numberField(c, t, p, &upload, 1, 32, 1, "", "每个上传的连接数") {
 				s.Threads, s.Parallel, s.Upload = cfg.Threads, cfg.Parallel, int(upload)
 				manual()
 			}
@@ -182,8 +188,12 @@ type tuneBar struct {
 	failed bool // refused at times
 }
 
-// tuneResult shows the last measurement: for each setting, a row of
-// cells for each value measured, the chosen one in the accent color.
+// tuneLabelWidth is the width of the values before the bars, one for every
+// setting so that the bars line up.
+const tuneLabelWidth = 132
+
+// tuneResult shows the last measurement and, unfolded, for each setting
+// a bar for each value measured, the chosen one in the accent color.
 func (a *App) tuneResult(c *ui.Context, t *ui.Theme, p *palette, cfg tune.Config) {
 	r := a.measured()
 	detail := "还没有测速"
@@ -197,8 +207,22 @@ func (a *App) tuneResult(c *ui.Context, t *ui.Theme, p *palette, cfg tune.Config
 	case r != nil:
 		detail = humanTime(r.At.Unix(), c.Now()) + " · 约 " + humanSpeed(r.Total(cfg))
 	}
-	ui.Column(c).Padding(0, 0, 12).Gap(6).Children(func() {
-		settingRow(c, t, p, "实测速度", detail, func() {
+	ui.Column(c).Children(func() {
+		settingRow(c, t, p, "gauge", tileOrange, "实测速度", detail, func() {
+			if r != nil {
+				d := ui.ButtonBase(c).Label("详情").Height(28).PaddingX(8).Radius(7).Gap(3).AlignItems(ui.Center).TextColor(t.TextMuted)
+				if d.Hovered() {
+					d.Background(p.Hover).TextColor(t.Text)
+				}
+				turn := d.AnimateTo("turn", map[bool]float32{true: 1, false: 0}[a.tuneOpen], motionPanel)
+				d.Children(func() {
+					ui.Text(c, "详情").FontSize(12).SingleLine()
+					ui.Icon(c, icon("chevron-down")).FontSize(12).Rotate(turn * 180)
+				})
+				if d.Clicked() {
+					a.tuneOpen = !a.tuneOpen
+				}
+			}
 			b := pill(c, t, p, "", "重测", false).Disabled(a.tuning)
 			if a.tuning {
 				b.Children(func() { ui.Spinner(c) })
@@ -207,51 +231,49 @@ func (a *App) tuneResult(c *ui.Context, t *ui.Theme, p *palette, cfg tune.Config
 				a.runTune(true)
 			}
 		})
-		if r == nil {
+		if r == nil || !a.tuneOpen {
 			return
 		}
-		row := 0
-		group := func(title, note string, labelW float32, bars []tuneBar) {
-			if len(bars) == 0 {
-				return
-			}
-			fastest := 0.0
-			for _, b := range bars {
-				fastest = max(fastest, b.speed)
-			}
-			ui.Column(c.Key(title)).Gap(5).Padding(6, 0, 0).Children(func() {
-				ui.Row(c).Gap(8).AlignItems(ui.End).Children(func() {
-					ui.Text(c, title).Font(fontMono).FontSize(11).FontWeight(500).TextColor(p.Faint)
-					if note != "" {
-						ui.Text(c, note).FontSize(11).TextColor(p.Faint).SingleLine().Shrink(1)
+		ui.Column(c).Gap(12).Padding(4, 0, 14, 36).Transition(rowEnter).Children(func() {
+			row := 0
+			group := func(title, note string, bars []tuneBar) {
+				if len(bars) == 0 {
+					return
+				}
+				fastest := 0.0
+				for _, b := range bars {
+					fastest = max(fastest, b.speed)
+				}
+				ui.Column(c.Key(title)).Gap(4).Children(func() {
+					ui.Row(c).Gap(8).AlignItems(ui.End).Children(func() {
+						ui.Text(c, title).FontSize(11).FontWeight(600).TextColor(t.TextMuted)
+						if note != "" {
+							ui.Text(c, note).FontSize(11).TextColor(p.Faint).SingleLine().Shrink(1)
+						}
+					})
+					for _, b := range bars {
+						a.tuneBarRow(c, t, p, b, fastest, row, r.At)
+						row++
 					}
 				})
-				for _, b := range bars {
-					a.tuneBarRow(c, t, p, b, fastest, labelW, row, r.At)
-					row++
-				}
-			})
-		}
+			}
 
-		var hosts []tuneBar
-		for _, s := range r.Hosts {
-			hosts = append(hosts, tuneBar{label: s.Host, speed: s.Speed, failed: s.Errors > 0,
-				chosen: len(cfg.Hosts) > 0 && s.Host == cfg.Hosts[0]})
-		}
-		group("下载线路", "", 168, hosts)
-		group("每个文件的连接数", "", 24, counts(r.Threads, int64(cfg.Threads)))
-		var blocks []tuneBar
-		for _, s := range r.Blocks {
-			blocks = append(blocks, tuneBar{label: humanSize(s.Value), speed: s.Speed, failed: s.Errors > 0, chosen: s.Value == cfg.Block})
-		}
-		group("请求块大小", "", 52, blocks)
-		group("同时传输的文件数", "总速度", 24, counts(r.Files, int64(cfg.Parallel)))
-		note := ""
-		if r.UploadErr != "" {
-			note = r.UploadErr
-		}
-		group("每个上传的连接数", note, 24, counts(r.Upload, int64(cfg.Upload)))
-		ui.Text(c, "播放与预览预读 "+itoa(cfg.Ahead)+" 个连接").Font(fontMono).FontSize(11).TextColor(p.Faint).Padding(4, 0, 0)
+			var hosts []tuneBar
+			for _, s := range r.Hosts {
+				hosts = append(hosts, tuneBar{label: s.Host, speed: s.Speed, failed: s.Errors > 0,
+					chosen: len(cfg.Hosts) > 0 && s.Host == cfg.Hosts[0]})
+			}
+			group("下载线路", "", hosts)
+			group("每个文件的连接数", "", counts(r.Threads, int64(cfg.Threads)))
+			var blocks []tuneBar
+			for _, s := range r.Blocks {
+				blocks = append(blocks, tuneBar{label: humanSize(s.Value), speed: s.Speed, failed: s.Errors > 0, chosen: s.Value == cfg.Block})
+			}
+			group("请求块大小", "", blocks)
+			group("同时传输的文件数", "总速度", counts(r.Files, int64(cfg.Parallel)))
+			group("每个上传的连接数", r.UploadErr, counts(r.Upload, int64(cfg.Upload)))
+			ui.Text(c, "播放与预览预读 "+itoa(cfg.Ahead)+" 个连接").FontSize(11).TextColor(p.Faint)
+		})
 	})
 }
 
@@ -264,40 +286,33 @@ func counts(samples []tune.Sample, chosen int64) []tuneBar {
 	return bars
 }
 
-// tuneBarRow draws one value's speed as cells filling in, after those
-// above it.
-func (a *App) tuneBarRow(c *ui.Context, t *ui.Theme, p *palette, b tuneBar, fastest float64, labelW float32, i int, at time.Time) {
-	ui.Row(c.Key(b.label)).Gap(12).AlignItems(ui.Center).Font(fontMono).FontSize(12).FontFeatures("tnum").
-		TextColor(map[bool]ui.Color{true: t.Text, false: p.Faint}[b.chosen]).Children(func() {
-		ui.Text(c, b.label).Width(labelW).TextAlign(ui.End).SingleLine()
+// tuneBarRow draws one value's speed as a slim rounded bar growing in,
+// after those above it: the chosen one in the accent color.
+func (a *App) tuneBarRow(c *ui.Context, t *ui.Theme, p *palette, b tuneBar, fastest float64, i int, at time.Time) {
+	ui.Row(c.Key(b.label)).Height(18).Gap(12).AlignItems(ui.Center).FontSize(12).FontFeatures("tnum").
+		TextColor(map[bool]ui.Color{true: t.Text, false: t.TextMuted}[b.chosen]).Children(func() {
+		ui.Text(c, b.label).Width(tuneLabelWidth).SingleLine()
 		frac := float32(0)
 		if fastest > 0 {
 			frac = float32(b.speed / fastest)
 		}
-		fill, empty := p.Faint.Alpha(0.6), p.Hairline
+		fill := p.Faint
 		if b.chosen {
 			fill = t.Accent
 		}
-		bar := ui.Box(c).Grow(1).Height(10)
+		bar := ui.Box(c).Grow(1).Height(6).Radius(3).Background(p.Hairline)
 		shown := bar.Keyframes("grow", []ui.Keyframe{{At: 0, Value: 0}, {At: 360 * time.Millisecond, Value: frac, Ease: easeStandard}},
 			ui.KeyframeOptions{Delay: time.Duration(i) * 30 * time.Millisecond, Run: uint64(at.UnixNano())})
 		bar.Draw(func(pt *ui.Painter, r ui.Rect) {
-			const w, gap = 5, 2
-			n := int((r.W + gap) / (w + gap))
-			on := int(shown*float32(n) + 0.5)
-			for k := range n {
-				color := empty
-				if k < on {
-					color = fill
-				}
-				pt.Fill(ui.Rect{X: r.X + float32(k)*(w+gap), Y: r.Y, W: w, H: r.H}, color, 1)
+			if w := r.W * shown; w > 0 {
+				pt.Fill(ui.Rect{X: r.X, Y: r.Y, W: max(w, r.H), H: r.H}, fill, r.H/2)
 			}
 		})
 		speed := humanSpeed(b.speed)
 		if b.failed {
 			speed += "!"
 		}
-		ui.Text(c, speed).Width(80).TextAlign(ui.End)
+		ui.Text(c, speed).Width(72).TextAlign(ui.End).FontWeight(map[bool]int{true: 600, false: 400}[b.chosen])
 	})
 }
 

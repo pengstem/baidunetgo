@@ -61,11 +61,11 @@ func (a *App) shareDialog(c *ui.Context, t *ui.Theme, p *palette) {
 				ui.Icon(c, icon("circle-check")).FontSize(18).TextColor(t.Success)
 				dialogTitle(c, t, "分享链接已创建", countLabel(d.files)+" · "+periodLabel(sharePeriods[f.period]))
 			})
-			ui.Column(c).Padding(12).Gap(8).Radius(5).Border(1, p.Hairline).Background(t.Surface).Children(func() {
-				ui.Text(c, f.link).Font(fontMono).FontSize(t.Rem(0.9)).Selectable()
+			ui.Column(c).Padding(12).Gap(8).Radius(10).Background(p.Group).Children(func() {
+				ui.Text(c, f.link).FontSize(t.Rem(0.95)).Selectable()
 				ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 					ui.Text(c, "提取码").TextColor(t.TextMuted)
-					ui.Text(c, f.pwd).Font(fontMono).FontSize(18).FontWeight(500).LetterSpacing(4).TextColor(t.Accent).Selectable()
+					ui.Text(c, f.pwd).Font("monospace").FontSize(18).FontWeight(600).LetterSpacing(4).TextColor(t.Accent).Selectable()
 				})
 			})
 			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
@@ -84,7 +84,7 @@ func (a *App) shareDialog(c *ui.Context, t *ui.Theme, p *palette) {
 		dialogTitle(c, t, "分享"+countLabel(d.files), "")
 		ui.Column(c).Gap(8).Children(func() {
 			ui.Text(c, "有效期").TextColor(t.TextMuted).FontSize(t.Rem(0.9))
-			tabs(c, t, p, &f.period, "1 天", "7 天", "30 天", "永久").FillWidth()
+			segmented(c, t, p, &f.period, "1 天", "7 天", "30 天", "永久").FillWidth()
 		})
 		ui.Column(c).Gap(8).Children(func() {
 			ui.Text(c, "提取码").TextColor(t.TextMuted).FontSize(t.Rem(0.9))
@@ -143,12 +143,12 @@ func (a *App) saveLinkDialog(c *ui.Context, t *ui.Theme, p *palette) {
 	ui.TextArea(c, &f.text).Lines(2, 4).AutoFocus().Placeholder("https://pan.baidu.com/s/1… 提取码: abcd").Label("分享链接")
 	link, pwd, ok := baidu.ParseShareLink(f.text)
 	if ok {
-		ui.Row(c).Gap(8).AlignItems(ui.Center).Padding(8, 12).Radius(5).Background(p.Selected).Transition(rowEnter).Children(func() {
+		ui.Row(c).Gap(8).AlignItems(ui.Center).Padding(8, 12).Radius(10).Background(t.Accent.Alpha(0.1)).Transition(rowEnter).Children(func() {
 			ui.Icon(c, icon("link")).FontSize(15).TextColor(t.Accent)
 			ui.Text(c, strings.TrimPrefix(link, "https://")).SingleLine().Shrink(1)
 			ui.Spacer(c)
 			if pwd != "" {
-				ui.Text(c, "提取码 "+pwd).Font(fontMono).FontWeight(500).TextColor(t.Accent)
+				ui.Text(c, "提取码 "+pwd).FontWeight(600).TextColor(t.Accent)
 			} else {
 				ui.Text(c, "未识别到提取码").TextColor(t.Warning)
 			}
@@ -216,21 +216,18 @@ func (a *App) sharesPage(c *ui.Context, t *ui.Theme, p *palette) {
 			now := c.Now()
 			ui.List(c, &s.list, len(s.items), func(i int) {
 				it := s.items[i]
-				row := ui.Row(c.Key(it.ID)).Height(rowHeight + 6).PaddingX(12).Gap(12).AlignItems(ui.Center).Radius(5)
-				if row.Hovered() {
-					row.Background(p.Hover)
-				}
+				row := stripe(ui.Row(c.Key(it.ID)).Height(44).PaddingX(10).Gap(10).AlignItems(ui.Center), p, i)
 				f := baidu.File{Name: path.Base(it.Path), Path: it.Path, IsDir: path.Ext(it.Path) == ""}
 				row.Children(func() {
-					a.fileIcon(c, t, p, &f, 36)
-					ui.Column(c).Grow(1).Shrink(1).Gap(3).Children(func() {
+					a.fileIcon(c, t, p, &f, 28)
+					ui.Column(c).Grow(1).Shrink(1).Gap(1).Children(func() {
 						name := f.Name
 						if len(it.FsIDs) > 1 {
 							name += " 等 " + itoa(len(it.FsIDs)) + " 项"
 						}
-						ui.Text(c, name).FontWeight(500).SingleLine()
-						ui.Text(c, strings.TrimPrefix(it.Link, "https://")+" · "+itoa(it.Views)+" 次浏览").
-							FontSize(t.Rem(0.84)).TextColor(t.TextMuted).SingleLine()
+						ui.Text(c, name).SingleLine()
+						figure(c, strings.TrimPrefix(it.Link, "https://")+" · "+itoa(it.Views)+" 次浏览").
+							FontSize(11).TextColor(t.TextMuted)
 					})
 					status, color := "永久有效", t.Success
 					switch {
@@ -243,7 +240,7 @@ func (a *App) sharesPage(c *ui.Context, t *ui.Theme, p *palette) {
 							color = t.Warning
 						}
 					}
-					ui.Text(c, status).FontSize(t.Rem(0.84)).Padding(2, 8).Radius(6).Background(color.Alpha(0.12)).TextColor(color)
+					chip(c, status, color)
 					if s.busy[it.ID] {
 						ui.Spinner(c).Label("处理中")
 						return
@@ -259,7 +256,7 @@ func (a *App) sharesPage(c *ui.Context, t *ui.Theme, p *palette) {
 						a.cancelShare(it)
 					}
 				})
-			}).Grow(1).Padding(4, 12, 24)
+			}).Grow(1).Padding(4, 10, 20)
 		}
 	})
 }
@@ -301,7 +298,7 @@ func (a *App) cancelShare(it baidu.Share) {
 
 // sharesToolbar is the title bar's controls on the shares page.
 func (a *App) sharesToolbar(c *ui.Context, t *ui.Theme, p *palette) {
-	if iconButton(c, t, p, "refresh-cw", "刷新").Clicked() {
+	if toolButton(c, t, p, "refresh-cw", "刷新").Clicked() {
 		a.loadShares()
 	}
 	if pill(c, t, p, "link", "转存链接", true).Clicked() {

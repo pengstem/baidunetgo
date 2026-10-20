@@ -58,23 +58,19 @@ func (a *App) searchPage(c *ui.Context, t *ui.Theme, p *palette, q string) {
 			emptyState(c, t, p, "search", "没有找到「"+q+"」", "换个关键词试试", nil)
 		default:
 			now := c.Now()
-			ui.Text(c, "找到 "+itoa(len(s.results))+" 个结果").TextColor(t.TextMuted).Padding(4, 24, 8)
 			list := ui.List(c, &s.list, len(s.results), func(i int) {
 				f := s.results[i]
-				row := ui.Row(c.Key(f.FsID)).Height(rowHeight + 4).PaddingX(12).Gap(12).AlignItems(ui.Center).Radius(5)
-				if row.Hovered() {
-					row.Background(p.Hover)
-				}
+				row := stripe(ui.Row(c.Key(f.FsID)).Height(44).PaddingX(10).Gap(10).AlignItems(ui.Center), p, i)
 				row.Children(func() {
-					a.fileIcon(c, t, p, &f, 34)
-					ui.Column(c).Grow(1).Shrink(1).Gap(2).Children(func() {
+					a.fileIcon(c, t, p, &f, 28)
+					ui.Column(c).Grow(1).Shrink(1).Gap(1).Children(func() {
 						ui.RichText(c, highlight(f.Name, q, t)...).SingleLine()
-						ui.Text(c, path.Dir(f.Path)).FontSize(t.Rem(0.84)).TextColor(t.TextMuted).SingleLine()
+						ui.Text(c, path.Dir(f.Path)).FontSize(11).TextColor(t.TextMuted).SingleLine()
 					})
 					if !f.IsDir {
-						ui.Text(c, humanSize(f.Size)).Width(90).TextAlign(ui.End).TextColor(t.TextMuted)
+						figure(c, humanSize(f.Size)).Width(90).TextAlign(ui.End).TextColor(t.TextMuted)
 					}
-					ui.Text(c, humanTime(f.Mtime, now)).Width(140).TextAlign(ui.End).TextColor(t.TextMuted)
+					figure(c, humanTime(f.Mtime, now)).Width(140).TextAlign(ui.End).TextColor(t.TextMuted)
 				})
 				if row.DoubleClicked() {
 					a.open(f)
@@ -88,7 +84,7 @@ func (a *App) searchPage(c *ui.Context, t *ui.Theme, p *palette, q string) {
 					}
 				})
 			})
-			list.Grow(1).Padding(0, 12, 24)
+			list.Grow(1).Padding(4, 10, 20)
 		}
 	})
 }
@@ -97,22 +93,23 @@ func (a *App) searchPage(c *ui.Context, t *ui.Theme, p *palette, q string) {
 func highlight(name, q string, t *ui.Theme) []ui.Span {
 	i := indexFold(name, q)
 	if i < 0 || q == "" {
-		return []ui.Span{{Text: name, Weight: 500}}
+		return []ui.Span{{Text: name}}
 	}
 	return []ui.Span{
-		{Text: name[:i], Weight: 500},
+		{Text: name[:i]},
 		{Text: name[i : i+len(q)], Weight: 650, Color: t.Accent},
-		{Text: name[i+len(q):], Weight: 500},
+		{Text: name[i+len(q):]},
 	}
 }
 
 // searchField searches the netdisk for what is typed, growing as it takes
 // the focus.
 func (a *App) searchField(c *ui.Context, t *ui.Theme, p *palette) {
-	f := ui.SearchField(c.Key("search"), &a.query).Label("搜索网盘").Placeholder("搜索网盘").Height(32).Radius(9)
-	w := float32(180)
+	f := ui.SearchField(c.Key("search"), &a.query).Label("搜索网盘").Placeholder("搜索").Height(28).Radius(14).
+		Background(p.Control).Border(0, ui.Transparent)
+	w := float32(170)
 	if f.FocusWithin() || a.query != "" {
-		w = 260
+		w = 240
 	}
 	f.Width(f.AnimateTo("w", w, motionPanel))
 	if f.Submitted() {

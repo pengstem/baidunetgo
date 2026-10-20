@@ -55,3 +55,24 @@ func TestDownloadAndUploadPage(t *testing.T) {
 	tt.Advance(time.Second)
 	save(t, tt, "transfers")
 }
+
+func TestSpeedCard(t *testing.T) {
+	a, tt, _ := signedIn(t)
+	a.transfers.tasks = []transfer.Task{
+		{ID: 1, Kind: transfer.Download, Name: "电影.mkv", State: transfer.Running, Size: 4 << 30, Done: 3 << 30, Speed: 12 << 20},
+		{ID: 2, Kind: transfer.Upload, Name: "照片.zip", State: transfer.Running, Size: 600 << 20, Done: 120 << 20, Speed: 3 << 20},
+		{ID: 3, Kind: transfer.Download, Name: "文档.pdf", State: transfer.Queued, Size: 8 << 20},
+	}
+	for i := range speedHistory {
+		a.transfers.speeds = append(a.transfers.speeds, float64(8+i%17)*(1<<20))
+	}
+	a.router.Push("/transfers")
+	waitFor(t, tt, "当前速度")
+	tt.Advance(time.Second)
+	for _, s := range []string{"电影.mkv", "1 个下载 · 1 个上传 · 1 个排队 · 15 MB/s"} {
+		if !tt.HasText(s) {
+			t.Fatalf("no %q in %q", s, tt.Texts())
+		}
+	}
+	save(t, tt, "transfers-going")
+}

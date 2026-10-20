@@ -63,16 +63,19 @@ func humanTime(unix int64, now time.Time) string {
 }
 
 // stampTime writes when a file changed, as a list column shows it: the
-// time today, the day this year, the date before.
+// time today or yesterday, the day this year, the date before.
 func stampTime(unix int64, now time.Time) string {
 	t := time.Unix(unix, 0)
+	y := now.AddDate(0, 0, -1)
 	switch {
 	case t.Year() == now.Year() && t.YearDay() == now.YearDay():
 		return "今天 " + t.Format("15:04")
+	case t.Year() == y.Year() && t.YearDay() == y.YearDay():
+		return "昨天 " + t.Format("15:04")
 	case t.Year() == now.Year():
-		return t.Format("01-02 15:04")
+		return t.Format("1月2日 15:04")
 	}
-	return t.Format("2006-01-02")
+	return t.Format("2006/1/2")
 }
 
 // shortSize writes a size in the fewest characters: 734G, 1.5T.
