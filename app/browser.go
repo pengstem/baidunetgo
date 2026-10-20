@@ -181,16 +181,20 @@ func (a *App) fileGrid(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 	now := c.Now()
 	grid := ui.GridView(c, &l.grid, len(l.files), 148, 178, func(i int) {
 		f := &l.files[i]
-		tile := ui.Column(c).Fill().Padding(8).Gap(8).AlignItems(ui.Center).Radius(t.Radius).TextColor(t.Text).Background(t.Background)
-		if l.sel.Has(f.FsID) {
-			tile.Background(selectionFill(t, true))
+		// One plane: the tile's own fill, opaque and 2 DIP over the cell's
+		// edges so that it covers the border and fill the grid paints for
+		// a hovered or chosen cell, and no frames inside it.
+		tile := ui.Column(c).Absolute().Top(-2).Left(-2).Right(-2).Bottom(-2).Padding(10).Gap(8).AlignItems(ui.Center).Radius(t.Radius).TextColor(t.Text)
+		fill := t.Background
+		switch {
+		case l.sel.Has(f.FsID):
+			fill = selectionFill(t, true)
+		case tile.Hovered():
+			fill = t.Background.Mix(t.Text, 0.05)
 		}
+		tile.Background(tile.AnimateColor("fill", fill, motionHover))
 		in := entering(tile, l, i, now)
-		pose := ui.Pose{Y: (1 - in) * 4, Fade: 1 - in}
-		if tile.Hovered() && in == 1 {
-			pose.Y = -2
-		}
-		tile.AnimatePose(pose, motionPanel)
+		tile.AnimatePose(ui.Pose{Y: (1 - in) * 4, Fade: 1 - in}, motionPanel)
 		tile.Children(func() {
 			box := ui.Box(c).Width(124).Height(112).Radius(5).Center().Clip()
 			k := kindOf(f)
@@ -209,13 +213,15 @@ func (a *App) fileGrid(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 					}
 				})
 			} else {
-				box.Border(1, p.Hairline).Children(func() {
+				box.Children(func() {
 					if k == kindFolder {
-						folderGlyph(c, p, 56)
+						folderGlyph(c, p, 72)
 						return
 					}
-					ui.Icon(c, icon(k.look(p).icon)).FontSize(36).TextColor(p.Faint)
-					figure(c, typeLabel(f)).Absolute().Bottom(6).Right(8).FontSize(10).TextColor(t.TextMuted)
+					ui.Column(c).Gap(6).AlignItems(ui.Center).Children(func() {
+						ui.Icon(c, icon(k.look(p).icon)).FontSize(44).TextColor(p.Faint)
+						figure(c, typeLabel(f)).FontSize(10).TextColor(t.TextMuted)
+					})
 				})
 			}
 			ui.Text(c, f.Name).MaxLines(2).TextAlign(ui.Center).LineHeight(1.25)
