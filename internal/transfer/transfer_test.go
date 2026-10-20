@@ -165,3 +165,48 @@ func TestFolderDownloadAndUpload(t *testing.T) {
 		t.Errorf("saved tasks %d", len(m2.Tasks()))
 	}
 }
+
+// gated holds every range request until open is closed, or the request
+// is cancelled.
+type gated struct {
+	*counting
+	open chan struct{}
+}
+
+func (g *gated) Fetch(ctx context.Context, u string, off, n int64) (*http.Response, error) {
+	select {
+	case <-g.open:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	return g.counting.Fetch(ctx, u, off, n)
+}
+
+func TestHoldWaitsThenGoesOn(t *testing.T) {
+	srv, c, data := setup(t)
+	srv.Add(fakepan.Node{Path: "/小文件.bin", Data: data[:1000]})
+	g := &gated{counting: c, open: make(chan struct{})}
+	dir := t.TempDir()
+	m := New(g, baidu.Expired, "")
+	defer m.Close()
+	m.AddDownloads([]baidu.File{{Path: "/大文件.bin", Name: "大文件.bin", Size: int64(len(data))}}, dir)
+	wait(t, m, Running)
+	m.Hold()
+	m.AddDownloads([]baidu.File{{Path: "/小文件.bin", Name: "小文件.bin", Size: 1000}}, dir)
+	close(g.open) // the network is back, but the queue holds
+	time.Sleep(200 * time.Millisecond)
+	for _, x := range m.Tasks() {
+		if x.State != Queued {
+			t.Fatalf("%s is %v while held, want queued", x.Name, x.State)
+		}
+	}
+	if n := c.fetches.Load(); n != 0 {
+		t.Fatalf("%d blocks fetched while held", n)
+	}
+	m.Unhold()
+	wait(t, m, Done)
+	got, _ := os.ReadFile(filepath.Join(dir, "大文件.bin"))
+	if !bytes.Equal(got, data) {
+		t.Fatal("content differs after the hold")
+	}
+}

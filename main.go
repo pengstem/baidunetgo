@@ -4,6 +4,7 @@ package main
 
 import (
 	"log"
+	"os"
 
 	"github.com/egoist/mygo"
 	_ "github.com/egoist/mygo/locales/zh-Hans" // MyGo's own strings in Chinese
@@ -25,8 +26,18 @@ func main() {
 		}
 		return
 	}
+	// One window at a time: two would run the same transfers into the
+	// same files. A later launch brings the first forward instead. Runs
+	// against the pretend netdisk, or capturing for scripts, may go
+	// beside it.
+	alone := os.Getenv("BAIDUNETGO_FAKE") != "" || os.Getenv("BAIDUNETGO_CAPTURE") != ""
+	if !alone && !mygo.App.RequestSingleInstanceLock() {
+		return
+	}
 	a := app.New()
 	mygo.App.OnWillQuit(func(*mygo.QuitEvent) { a.Shutdown() })
+	// Before Run, to hear of a click that launched the app.
+	mygo.App.OnNotificationClick(a.Notification)
 	mygo.App.WhenReady(func() {
 		win := mygo.NewWindow(mygo.WindowOptions{
 			Title:     "BaiduNetGo",
@@ -47,6 +58,12 @@ func main() {
 			Content:              ui.View(a.View),
 		})
 		a.Attach(win)
+		mygo.App.OnSecondInstance(func([]string, string) {
+			if win.IsMinimized() {
+				win.Restore()
+			}
+			win.Show()
+		})
 		captureOnStart(win)
 	})
 	if err := mygo.App.Run(); err != nil {

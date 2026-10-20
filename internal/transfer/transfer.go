@@ -85,11 +85,12 @@ type Manager struct {
 	// OnFinish is called as a task ends, done or failed.
 	OnFinish func(t Task)
 
-	mu     sync.Mutex
-	tasks  []*Task
-	nextID int64
-	closed bool
-	stop   chan struct{}
+	mu      sync.Mutex
+	tasks   []*Task
+	nextID  int64
+	closed  bool
+	holding bool // Hold: nothing starts
+	stop    chan struct{}
 }
 
 // New makes a manager, loading the tasks saved at statePath ("" keeps
@@ -278,6 +279,11 @@ func (m *Manager) schedule() {
 		m.mu.Unlock()
 		return
 	}
+	if m.holding {
+		m.mu.Unlock()
+		m.changed() // tasks added wait, queued
+		return
+	}
 	running := 0
 	for _, t := range m.tasks {
 		if t.State == Running {
@@ -288,7 +294,9 @@ func (m *Manager) schedule() {
 		if running >= max(m.Parallel, 1) {
 			break
 		}
-		if t.State != Queued {
+		// A task still winding down from a pause starts again as its
+		// run ends, not beside it on the same file.
+		if t.State != Queued || t.cancel != nil {
 			continue
 		}
 		running++
@@ -412,6 +420,34 @@ func (m *Manager) ResumeAll() {
 		if t.State == Paused || t.State == Failed {
 			m.Resume(t.ID)
 		}
+	}
+}
+
+// Hold stops the tasks running and starts none until Unhold, for while
+// the computer is offline or asleep. Those it stops wait in the queue, to
+// go on where they were; tasks the user paused stay paused.
+func (m *Manager) Hold() {
+	m.mu.Lock()
+	m.holding = true
+	for _, t := range m.tasks {
+		if t.State == Running {
+			t.State, t.Speed = Queued, 0
+			t.cancel()
+		}
+	}
+	m.save()
+	m.mu.Unlock()
+	m.changed()
+}
+
+// Unhold starts the queue again after Hold.
+func (m *Manager) Unhold() {
+	m.mu.Lock()
+	held := m.holding
+	m.holding = false
+	m.mu.Unlock()
+	if held {
+		m.schedule()
 	}
 }
 

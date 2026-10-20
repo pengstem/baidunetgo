@@ -53,6 +53,7 @@ type App struct {
 	tuneStage     string // what the measurement measures now
 	tuneOpen      bool   // the measurement's details unfolded in settings
 	transfers     transfersState
+	sys           systemState
 	shareForm     shareForm
 	shares        sharesState
 	sharesDirty   bool
@@ -90,6 +91,7 @@ func (a *App) Attach(win *mygo.Window) {
 	a.store = OpenStore()
 	a.settings = loadSettings()
 	a.useSettings()
+	a.watchSystem()
 	a.boot()
 }
 

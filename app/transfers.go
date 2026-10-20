@@ -40,6 +40,7 @@ func (a *App) startTransfers() {
 		a.update(func() {
 			if a.xfer == m {
 				a.transfers.tasks = tasks
+				a.showTransfers(tasks)
 			}
 		})
 	}
@@ -48,6 +49,7 @@ func (a *App) startTransfers() {
 	}
 	a.xfer = m
 	a.transfers.tasks = m.Tasks()
+	a.holdTransfers()
 }
 
 func (a *App) stopTransfers() {
@@ -56,6 +58,7 @@ func (a *App) stopTransfers() {
 		a.xfer = nil
 	}
 	a.transfers = transfersState{}
+	a.showTransfers(nil)
 }
 
 // finished tells of a task that ended.
@@ -67,12 +70,13 @@ func (a *App) finished(t transfer.Task) {
 		a.toast("「"+t.Name+"」传输失败："+t.Err, "error")
 		return
 	}
-	verb := "下载"
+	// A click shows the file (Notification), so each has its own ID.
+	verb, id := "下载", "file:"+t.Local
 	if t.Kind == transfer.Upload {
-		verb = "上传"
+		verb, id = "上传", "dir:"+path.Dir(t.Remote)
 	}
 	if a.win != nil && !a.win.IsFocused() {
-		mygo.NewNotification(mygo.NotificationOptions{Title: verb + "完成", Body: t.Name, Group: "transfers"}).Show()
+		mygo.NewNotification(mygo.NotificationOptions{ID: id, Title: verb + "完成", Body: t.Name, Group: "transfers"}).Show()
 	}
 }
 
