@@ -22,6 +22,8 @@ CGO_ENABLED=0 GOOS=windows go build -o /dev/null .   # cross-compile check
 
 **Releases.** Every push to `main` releases (`.github/workflows/release.yml`): tests, then `go run ./tools/release` picks the version (last tag + patch; `#minor`/`#major` in a commit, or a higher version set by hand in `mygo.json`) and writes its `CHANGELOG.md` section (the `## Unreleased` notes if any, else the commits grouped 新增/修复/改进), then the workflow pushes a `Release vX.Y.Z [skip ci]` commit and tag to main, builds Linux/Windows on Ubuntu and `darwin/universal` on macOS, uploads to the release and publishes it. So `git pull --rebase` before pushing. The repo is private, so MyGo's self-updater (`updates` in `mygo.json`, which needs a public repo) is not set up.
 
+**Commit and release as you go, without being asked.** Once a task is done and checked (`go test ./...`, `go vet ./...`, `gofmt -l .`), commit it to main yourself, one commit per task in this repo's style (one sentence saying what changed and why), then `git pull --rebase` and push. The push is what bumps the version: the release workflow tags the next patch, so don't edit the version in `mygo.json` by hand; put `#minor` in the commit message for a feature-sized change. Never leave finished work uncommitted.
+
 Dev-only environment variables (see `capture.go`, `app/app.go`, `app/session.go`):
 - `BAIDUNETGO_FAKE=1`: sign in to `internal/fakepan` instead of Baidu.
 - `BAIDUNETGO_ROUTE=/files/照片`: router start page.
