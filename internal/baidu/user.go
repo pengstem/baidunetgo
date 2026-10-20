@@ -92,17 +92,20 @@ func (c *Client) User(ctx context.Context) (*User, error) {
 // uid returns the Baidu account id, asking Tieba for it once.
 func (c *Client) uid() (uint64, error) {
 	uidMu.Lock()
-	defer uidMu.Unlock()
 	if c.creds.UID != 0 || c.fake() {
+		defer uidMu.Unlock()
 		return c.creds.UID, nil
 	}
 	t, err := tieba.NewUserInfoByBDUSS(c.creds.BDUSS)
 	if err != nil {
+		uidMu.Unlock()
 		return 0, err
 	}
 	c.creds.UID = t.Baidu.UID
 	c.pcs.SetUID(t.Baidu.UID)
-	return c.creds.UID, nil
+	uidMu.Unlock()
+	c.changed()
+	return t.Baidu.UID, nil
 }
 
 // Quota is the netdisk's space.

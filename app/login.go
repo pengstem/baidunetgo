@@ -2,12 +2,13 @@ package app
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/egoist/mygo/ui"
 
 	"github.com/pengstem/baidunetgo/internal/baidu"
-	"github.com/pengstem/baidunetgo/internal/pcsimport"
+	"github.com/pengstem/baidunetgo/internal/migrate"
 )
 
 // loginState is the sign-in screen.
@@ -25,8 +26,8 @@ type loginState struct {
 	busy   bool
 	err    string
 
-	pcs        *pcsimport.Account // BaiduPCS-Go's account, if any
-	pcsChecked bool
+	others  []migrate.Account // accounts other clients are signed in with
+	checked bool
 }
 
 func (l *loginState) stopQR() {
@@ -111,8 +112,8 @@ func (a *App) startQR() {
 }
 
 // loginView is the sign-in screen: the QR code, and links to the other
-// ways in. It shows only without a saved session or BaiduPCS-Go's account,
-// or after signing out.
+// ways in. It shows only without a saved session or another client's
+// account, or after signing out.
 func (a *App) loginView(c *ui.Context, t *ui.Theme, p *palette) {
 	l := &a.login
 	if l.tab == 0 && l.qr == nil && !l.qrLoading && l.qrErr == "" {
@@ -153,9 +154,9 @@ func (a *App) loginView(c *ui.Context, t *ui.Theme, p *palette) {
 // loginLinks are the other ways in, as quiet links on one line.
 func (a *App) loginLinks(c *ui.Context, t *ui.Theme, p *palette) {
 	l := &a.login
-	if !l.pcsChecked && !a.fake {
-		l.pcsChecked = true
-		l.pcs, _ = pcsimport.Find()
+	if !l.checked && !a.fake {
+		l.checked = true
+		l.others = migrate.Find()
 	}
 	link := func(label string) bool {
 		b := ui.ButtonBase(c).Label(label).Height(24).PaddingX(4).Radius(3).TextColor(t.Accent).Disabled(l.busy)
@@ -166,11 +167,10 @@ func (a *App) loginLinks(c *ui.Context, t *ui.Theme, p *palette) {
 		return b.Clicked()
 	}
 	ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
-		if l.pcs != nil {
-			if link("用 BaiduPCS-Go 的账号（" + l.pcs.Name + "）") {
+		if len(l.others) > 0 {
+			if link("迁移" + l.others[0].Label() + "的登录") {
 				l.busy, l.err = true, ""
-				cr := l.pcs.Creds
-				go a.signIn(cr, true)
+				go a.migrateNow(l.others)
 			}
 			ui.Text(c, "|").TextColor(p.Hairline)
 		}
@@ -279,4 +279,12 @@ func (a *App) cookiePanel(c *ui.Context, t *ui.Theme, p *palette) {
 		go a.signIn(cr, true)
 	}
 	ui.Text(c, "加密保存在本机，密钥在系统钥匙串").TextColor(p.Faint).FontSize(12)
+}
+
+// migrateNow signs in with the first of the other clients' accounts that
+// still signs in, from the sign-in screen.
+func (a *App) migrateNow(accs []migrate.Account) {
+	if !a.migrate(accs, "") {
+		a.signInFailed(errors.New("其他客户端的登录已失效"), true)
+	}
 }

@@ -35,6 +35,10 @@ const (
 type Store struct {
 	Dir     string
 	Keyring Keyring // nil keeps the key in a file beside the session
+	// Older are keyrings the key may have been kept in before. Load
+	// tries their keys when Keyring's does not open the session, and
+	// then saves it again under Keyring's.
+	Older []Keyring
 }
 
 // Save encrypts v as JSON into the store.
@@ -80,25 +84,43 @@ func (s *Store) Load(v any) error {
 		return err
 	}
 	key, err := s.key(false)
-	if err != nil {
-		return err
+	if err == nil {
+		if data, err := open(key, sealed); err == nil {
+			return json.Unmarshal(data, v)
+		}
 	}
+	for _, kr := range s.Older {
+		k, err := kr.Get(keyName)
+		if err != nil || len(k) != 32 {
+			continue
+		}
+		data, err := open(k, sealed)
+		if err != nil {
+			continue
+		}
+		if err := json.Unmarshal(data, v); err != nil {
+			return err
+		}
+		// Keep it under the current key from now on.
+		return s.Save(v)
+	}
+	return fmt.Errorf("%w: cannot decrypt", ErrNoSession)
+}
+
+// open decrypts what Save sealed.
+func open(key, sealed []byte) ([]byte, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if len(sealed) < gcm.NonceSize() {
-		return ErrNoSession
+		return nil, ErrNoSession
 	}
-	data, err := gcm.Open(nil, sealed[:gcm.NonceSize()], sealed[gcm.NonceSize():], []byte(sessionFile))
-	if err != nil {
-		return fmt.Errorf("%w: cannot decrypt", ErrNoSession)
-	}
-	return json.Unmarshal(data, v)
+	return gcm.Open(nil, sealed[:gcm.NonceSize()], sealed[gcm.NonceSize():], []byte(sessionFile))
 }
 
 // Clear forgets the session and its key.

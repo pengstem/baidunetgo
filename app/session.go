@@ -12,7 +12,7 @@ import (
 	"github.com/pengstem/baidunetgo/internal/auth"
 	"github.com/pengstem/baidunetgo/internal/baidu"
 	"github.com/pengstem/baidunetgo/internal/fakepan"
-	"github.com/pengstem/baidunetgo/internal/pcsimport"
+	"github.com/pengstem/baidunetgo/internal/migrate"
 	"github.com/pengstem/baidunetgo/internal/stream"
 )
 
@@ -33,17 +33,28 @@ type session struct {
 	quota  baidu.Quota
 }
 
-// openStore finds where the session is kept.
-func openStore() *auth.Store {
+// keyService is the keyring service the session's key is kept under, the
+// same for `go run`, `mygo dev` and the packaged app, which each have a
+// service of their own in mygo.Secrets.
+const keyService = "com.pengstem.baidunetgo"
+
+// OpenStore finds where the session is kept, nil when it cannot.
+func OpenStore() *auth.Store {
 	dir, err := mygo.App.Path(mygo.PathUserData)
 	if err != nil {
 		log.Printf("session: %v", err)
 		return nil
 	}
-	return &auth.Store{Dir: dir, Keyring: mygo.Secrets}
+	return &auth.Store{
+		Dir:     dir,
+		Keyring: mygo.Secrets.Service(keyService),
+		// Where earlier builds kept the key.
+		Older: []auth.Keyring{mygo.Secrets, mygo.Secrets.Service(keyService + ".dev"), mygo.Secrets.Service(mygo.App.Name())},
+	}
 }
 
-// boot signs in with the saved session, if any, else asks to sign in.
+// boot signs in with the saved session, else with an account another
+// client on this computer is signed in with, else asks to sign in.
 func (a *App) boot() {
 	if os.Getenv("BAIDUNETGO_FAKE") != "" {
 		srv := fakepan.New()
@@ -55,27 +66,55 @@ func (a *App) boot() {
 		a.phase = phaseLogin
 		return
 	}
+	skip := a.settings.SkipImport
 	go func() {
 		var cr baidu.Credentials
-		if err := a.store.Load(&cr); err != nil {
-			if !errors.Is(err, auth.ErrNoSession) {
-				log.Printf("session: %v", err)
-			}
-			// A user of BaiduPCS-Go is signed in already.
-			if acc, perr := pcsimport.Find(); perr == nil && !a.settings.SkipPCSImport {
-				a.signIn(acc.Creds, false)
-				a.update(func() {
-					if a.phase == phaseReady {
-						a.toast("已自动使用 BaiduPCS-Go 的登录", "success")
-					}
-				})
+		var expired error
+		if err := a.store.Load(&cr); err == nil {
+			c := baidu.Open(cr)
+			u, err := c.User(context.Background())
+			if err == nil {
+				a.signedIn(c, u, false)
 				return
 			}
-			a.update(func() { a.phase = phaseLogin })
+			if !errors.Is(err, baidu.ErrNotLoggedIn) {
+				// Offline, say: keep the session for the next try.
+				a.signInFailed(err, false)
+				return
+			}
+			expired = err
+		} else if !errors.Is(err, auth.ErrNoSession) {
+			log.Printf("session: %v", err)
+		}
+		if !skip && a.migrate(migrate.Find(), cr.BDUSS) {
 			return
 		}
-		a.signIn(cr, false)
+		if expired != nil {
+			a.signInFailed(expired, false)
+			return
+		}
+		a.update(func() { a.phase = phaseLogin })
 	}()
+}
+
+// migrate signs in with the first of the accounts that still signs in,
+// skipping the BDUSS known not to. It reports whether one did.
+func (a *App) migrate(accs []migrate.Account, skip string) bool {
+	for _, acc := range accs {
+		if acc.Creds.BDUSS == skip {
+			continue
+		}
+		c := baidu.Open(acc.Creds)
+		u, err := c.User(context.Background())
+		if err != nil {
+			log.Printf("session: %s: %v", acc.From, err)
+			continue
+		}
+		a.signedIn(c, u, true)
+		a.update(func() { a.toast("已迁移"+acc.From+"的登录", "success") })
+		return true
+	}
+	return false
 }
 
 // signIn checks the credentials and, if they sign in, saves them and shows
@@ -88,25 +127,38 @@ func (a *App) signIn(cr baidu.Credentials, fresh bool) {
 func (a *App) signInWith(c *baidu.Client, fresh bool) {
 	u, err := c.User(context.Background())
 	if err != nil {
-		a.update(func() {
-			a.phase = phaseLogin
-			a.login.busy = false
-			if fresh || !errors.Is(err, baidu.ErrNotLoggedIn) {
-				a.login.err = err.Error()
-			} else {
-				a.login.err = "登录已过期，请重新登录"
-			}
-		})
+		a.signInFailed(err, fresh)
 		return
 	}
-	if a.store != nil && !a.fake {
-		if err := a.store.Save(c.Credentials()); err != nil {
-			log.Printf("session: save: %v", err)
+	a.signedIn(c, u, fresh)
+}
+
+// signInFailed shows the sign-in screen with why.
+func (a *App) signInFailed(err error, fresh bool) {
+	a.update(func() {
+		a.phase = phaseLogin
+		a.login.busy = false
+		if fresh || !errors.Is(err, baidu.ErrNotLoggedIn) {
+			a.login.err = err.Error()
+		} else {
+			a.login.err = "登录已过期，请重新登录"
 		}
+	})
+}
+
+// signedIn keeps the session, now and whenever it changes, and shows the
+// netdisk. fresh is a sign-in the user (or a migration) just made.
+func (a *App) signedIn(c *baidu.Client, u *baidu.User, fresh bool) {
+	if a.store != nil && !a.fake {
+		a.saveMu.Lock()
+		a.saving, a.saved = c, nil
+		a.saveMu.Unlock()
+		c.OnChange(func() { a.persist(c) })
+		a.persist(c)
 	}
 	a.update(func() {
-		if fresh && a.settings.SkipPCSImport {
-			a.settings.SkipPCSImport = false
+		if fresh && a.settings.SkipImport {
+			a.settings.SkipImport = false
 			a.settings.save()
 		}
 		a.sess = &session{client: c, user: u}
@@ -115,6 +167,25 @@ func (a *App) signInWith(c *baidu.Client, fresh bool) {
 		a.onSignedIn()
 	})
 	go a.loadProfile(c, u)
+}
+
+// persist saves what c, the signed-in client, signs in with, when it
+// changed since the last save. It runs on any goroutine.
+func (a *App) persist(c *baidu.Client) {
+	if a.store == nil || a.fake {
+		return
+	}
+	cr := c.Credentials()
+	a.saveMu.Lock()
+	defer a.saveMu.Unlock()
+	if c != a.saving || (a.saved != nil && *a.saved == cr) {
+		return
+	}
+	if err := a.store.Save(cr); err != nil {
+		log.Printf("session: save: %v", err)
+		return
+	}
+	a.saved = &cr
 }
 
 // loadProfile fetches the avatar and the quota.
@@ -152,10 +223,13 @@ func (a *App) loadProfile(c *baidu.Client, u *baidu.User) {
 // signOut forgets the session.
 func (a *App) signOut() {
 	if a.store != nil && !a.fake {
+		a.saveMu.Lock()
 		a.store.Clear()
-		// Signed out on purpose: do not sign in with BaiduPCS-Go's
+		a.saving, a.saved = nil, nil
+		a.saveMu.Unlock()
+		// Signed out on purpose: do not sign in with another client's
 		// account again by itself.
-		a.settings.SkipPCSImport = true
+		a.settings.SkipImport = true
 		a.settings.save()
 	}
 	a.onSignedOut()

@@ -24,9 +24,9 @@ type settings struct {
 	// Tune is the last measurement of download speeds, and the
 	// membership it was made with.
 	Tune *tuneRecord `json:"tune,omitempty"`
-	// SkipPCSImport stops signing in with BaiduPCS-Go's account by itself,
-	// once the user signed out of it.
-	SkipPCSImport bool `json:"skip_pcs_import,omitempty"`
+	// SkipImport stops signing in with another client's account by
+	// itself, once the user signed out.
+	SkipImport bool `json:"skip_pcs_import,omitempty"`
 }
 
 type tuneRecord struct {

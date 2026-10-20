@@ -8,9 +8,9 @@ import (
 
 	"github.com/egoist/mygo"
 
-	"github.com/pengstem/baidunetgo/internal/auth"
+	"github.com/pengstem/baidunetgo/app"
 	"github.com/pengstem/baidunetgo/internal/baidu"
-	"github.com/pengstem/baidunetgo/internal/pcsimport"
+	"github.com/pengstem/baidunetgo/internal/migrate"
 	"github.com/pengstem/baidunetgo/internal/selftest"
 )
 
@@ -26,24 +26,22 @@ func selfTest() bool {
 		go func() {
 			code := 0
 			defer func() { mygo.App.Exit(code) }()
-			dir, err := mygo.App.Path(mygo.PathUserData)
-			if err != nil {
-				fmt.Println("selftest:", err)
+			store := app.OpenStore()
+			if store == nil {
 				code = 1
 				return
 			}
 			var cr baidu.Credentials
-			store := &auth.Store{Dir: dir, Keyring: mygo.Secrets}
 			if err := store.Load(&cr); err != nil {
-				// Else the account BaiduPCS-Go signed in with.
-				acc, perr := pcsimport.Find()
-				if perr != nil {
-					fmt.Println("selftest: 没有已保存的登录:", err, perr)
+				// Else the account another client signed in with.
+				accs := migrate.Find()
+				if len(accs) == 0 {
+					fmt.Println("selftest: 没有已保存的登录:", err)
 					code = 1
 					return
 				}
-				fmt.Println("selftest: 使用 BaiduPCS-Go 的登录")
-				cr = acc.Creds
+				fmt.Println("selftest: 使用" + accs[0].Label() + "的登录")
+				cr = accs[0].Creds
 			}
 			rep := selftest.Run(context.Background(), baidu.Open(cr), os.Getenv("BAIDUNETGO_PROBE") != "", func(f string, a ...any) {
 				fmt.Printf(f+"\n", a...)

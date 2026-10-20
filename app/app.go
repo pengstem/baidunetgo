@@ -23,10 +23,15 @@ type App struct {
 	router *ui.Router
 
 	store *auth.Store
-	phase phase
-	login loginState
-	sess  *session
-	fake  bool // signed in to a pretend netdisk (BAIDUNETGO_FAKE)
+	// saveMu guards saving, the client whose session is kept, and saved,
+	// what was last written.
+	saveMu sync.Mutex
+	saving *baidu.Client
+	saved  *baidu.Credentials
+	phase  phase
+	login  loginState
+	sess   *session
+	fake   bool // signed in to a pretend netdisk (BAIDUNETGO_FAKE)
 
 	listings    map[string]*listing
 	listingTick uint64
@@ -77,7 +82,7 @@ func New() *App {
 // Attach gives the app the window that shows it.
 func (a *App) Attach(win *mygo.Window) {
 	a.win = win
-	a.store = openStore()
+	a.store = OpenStore()
 	a.settings = loadSettings()
 	a.useSettings()
 	a.boot()
@@ -88,6 +93,9 @@ func (a *App) copy(text, msg string) { a.copyText, a.copied = text, msg }
 
 // Shutdown saves what must outlast the app, as it quits.
 func (a *App) Shutdown() {
+	if a.sess != nil {
+		a.persist(a.sess.client)
+	}
 	if a.xfer != nil {
 		a.xfer.Close()
 	}

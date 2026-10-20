@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/qjfoidnh/BaiduPCS-Go/baidupcs"
@@ -112,7 +113,9 @@ type Client struct {
 
 	pcs   *baidupcs.BaiduPCS
 	http  *http.Client
-	creds Credentials
+	creds Credentials // guarded by uidMu
+	// onChange is told when creds change.
+	onChange atomic.Pointer[func()]
 	// base is the netdisk's web API, a variable for tests.
 	base string
 }
@@ -140,6 +143,8 @@ func Open(cr Credentials) *Client {
 
 const panBase = "https://pan.baidu.com"
 
+var panURL = &url.URL{Scheme: "https", Host: "pan.baidu.com", Path: "/"}
+
 // OpenAt makes a client of a netdisk at base, a fake one in tests: its
 // download links are base's /file.
 func OpenAt(cr Credentials, base string) *Client {
@@ -151,9 +156,35 @@ func OpenAt(cr Credentials, base string) *Client {
 // fake reports whether the client talks to a pretend netdisk.
 func (c *Client) fake() bool { return c.base != panBase }
 
-// Credentials returns what the client signs in with, with the uid once
-// User has found it.
-func (c *Client) Credentials() Credentials { return c.creds }
+// Credentials returns what the client signs in with now: with the uid
+// once it is found, and with BDUSS and STOKEN as the netdisk last set them.
+func (c *Client) Credentials() Credentials {
+	uidMu.Lock()
+	cr := c.creds
+	uidMu.Unlock()
+	if c.fake() {
+		return cr
+	}
+	for _, ck := range c.http.Jar.Cookies(panURL) {
+		switch ck.Name {
+		case "BDUSS":
+			cr.BDUSS = ck.Value
+		case "STOKEN":
+			cr.STOKEN = ck.Value
+		}
+	}
+	return cr
+}
+
+// OnChange sets fn to be called, on any goroutine, when Credentials gain
+// something worth keeping, such as the uid.
+func (c *Client) OnChange(fn func()) { c.onChange.Store(&fn) }
+
+func (c *Client) changed() {
+	if fn := c.onChange.Load(); fn != nil {
+		(*fn)()
+	}
+}
 
 // PCS returns the library's client, for operations this package does not
 // wrap.

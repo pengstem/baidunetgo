@@ -47,3 +47,25 @@ func TestRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+func TestOlderKeyring(t *testing.T) {
+	dir := t.TempDir()
+	old, cur := memKeyring{}, memKeyring{}
+	want := session{"bduss", "c"}
+	if err := (&Store{Dir: dir, Keyring: old}).Save(want); err != nil {
+		t.Fatal(err)
+	}
+	s := &Store{Dir: dir, Keyring: cur, Older: []Keyring{memKeyring{}, old}}
+	var got session
+	if err := s.Load(&got); err != nil || got != want {
+		t.Fatalf("load with an older key: %v, %+v", err, got)
+	}
+	// Saved again under the current key.
+	got = session{}
+	if err := (&Store{Dir: dir, Keyring: cur}).Load(&got); err != nil || got != want {
+		t.Fatalf("not moved to the current key: %v", err)
+	}
+	if err := (&Store{Dir: dir, Keyring: memKeyring{}}).Load(&got); !errors.Is(err, ErrNoSession) {
+		t.Fatalf("a foreign key opened it: %v", err)
+	}
+}
