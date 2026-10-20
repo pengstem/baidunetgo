@@ -4,6 +4,12 @@
 
 <!-- 写在这里的内容会成为下一个版本的更新说明；留空则按提交记录自动生成。 -->
 
+## [0.4.1] - 2026-10-20
+
+### 改进
+
+- Make the specks move every frame and finish: frames that MyGo only paints again do not build the view, so a dissolve's progress, set as the view built, stood still between builds (jumping when the pointer moved) and a deleted row stayed half dissolved until something rebuilt it; the effect now reads its progress as it paints, the view is built again while rows dissolve or uploads catch up, and a dissolve starts from the first frame that shows it, not the last one built, which could be seconds old
+
 ## [0.4.0] - 2026-10-20
 
 ### 改进
