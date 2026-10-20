@@ -7,11 +7,11 @@ package baidu
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -134,12 +134,30 @@ func Open(cr Credentials) *Client {
 		pcs.SetUID(cr.UID)
 	}
 	hc := pcs.GetClient()
-	// The library turns certificate checks off; turn them back on.
+	// The library makes its transport on first use and keeps it from then
+	// on; make it, then put ours in its place.
 	hc.SetKeepAlive(true)
-	if tr, ok := hc.Client.Transport.(*http.Transport); ok {
-		tr.TLSClientConfig = &tls.Config{}
-	}
+	hc.Client.Transport = newTransport()
 	return &Client{pcs: pcs, http: &hc.Client, creds: cr, base: panBase}
+}
+
+// newTransport is the session's transport, for the API and for content.
+// It replaces the library's, which skips certificate checks, dials without
+// the request's context or a timeout, and sends every connection to a
+// host to the first address it resolved.
+func newTransport() *http.Transport {
+	d := &net.Dialer{Timeout: 15 * time.Second, KeepAlive: 30 * time.Second}
+	return &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
+		DialContext:           d.DialContext,
+		ForceAttemptHTTP2:     true,
+		TLSHandshakeTimeout:   15 * time.Second,
+		ResponseHeaderTimeout: 25 * time.Second,
+		ExpectContinueTimeout: time.Second,
+		IdleConnTimeout:       90 * time.Second,
+		MaxIdleConns:          100,
+		MaxIdleConnsPerHost:   64,
+	}
 }
 
 const panBase = "https://pan.baidu.com"

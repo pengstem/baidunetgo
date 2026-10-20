@@ -94,3 +94,17 @@ func TestRankHosts(t *testing.T) {
 		t.Errorf("ranked host not first: %v", got)
 	}
 }
+
+// TestTransportVerifies checks that content reads and the library's own
+// requests both check certificates, which the library's transport did not.
+func TestTransportVerifies(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer srv.Close()
+	c := Open(Credentials{BDUSS: "x"})
+	if _, err := c.Fetch(context.Background(), srv.URL, 0, 1); err == nil {
+		t.Error("Fetch trusted a self-signed certificate")
+	}
+	if _, err := c.PCS().GetClient().Req(http.MethodGet, srv.URL, nil, nil); err == nil {
+		t.Error("the library's client trusted a self-signed certificate")
+	}
+}
