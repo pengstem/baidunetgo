@@ -4,6 +4,13 @@
 
 <!-- 写在这里的内容会成为下一个版本的更新说明；留空则按提交记录自动生成。 -->
 
+## [0.4.4] - 2026-10-20
+
+### 改进
+
+- Copy pictures: the image preview copies its picture as PNG (a button, Cmd+C, and a right-click menu that also copies the path and zooms, with Cmd+= / Cmd+- / Cmd+0), turned upright as a JPEG's EXIF orientation says; text previews copy their whole text; the file list's and search's menus copy a picture without opening it; tests for all of it (the code landed in 28c0fd0)
+- Bring a folder's files in one after another from the top as it first shows, each popping up from a little below and a little smaller, rows 28 ms apart and tiles 45 ms, in place of the placeholders: a folder loading shows nothing, then a spinner if it takes a while, thumbnails on their way show the file's icon again, and the other pages' skeleton rows pulse as they did
+
 ## [0.4.3] - 2026-10-20
 
 ### 改进
