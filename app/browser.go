@@ -11,8 +11,8 @@ import (
 )
 
 const (
-	rowHeight  = 52
-	entranceIn = 700 * time.Millisecond
+	rowHeight  = 36
+	entranceIn = 500 * time.Millisecond
 )
 
 // filesPage is the browser showing one directory.
@@ -23,7 +23,7 @@ func (a *App) filesPage(c *ui.Context, t *ui.Theme, p *palette, dir string) {
 		l.sorted = a.order
 	}
 	a.fileActions(c, l)
-	page := ui.Box(c).Key("files:" + dir).Grow(1)
+	page := ui.Column(c).Key("files:" + dir).Grow(1)
 	if dropped := page.DroppedFiles(); len(dropped) > 0 {
 		a.upload(dropped, dir)
 	}
@@ -40,6 +40,9 @@ func (a *App) filesPage(c *ui.Context, t *ui.Theme, p *palette, dir string) {
 		default:
 			a.fileList(c, t, p, l)
 		}
+		if l.loaded {
+			a.statusBar(c, t, p, l)
+		}
 		a.selectionBar(c, t, p, l)
 		if page.FileDragOver() {
 			a.dropZone(c, t, p, dir)
@@ -50,15 +53,11 @@ func (a *App) filesPage(c *ui.Context, t *ui.Theme, p *palette, dir string) {
 // dropZone shows where files dragged over the window will go.
 func (a *App) dropZone(c *ui.Context, t *ui.Theme, p *palette, dir string) {
 	zone := ui.Column(c).Key("dropzone").Absolute().Top(8).Left(12).Right(12).Bottom(12).Center().Gap(10).
-		Radius(18).Background(t.Background.Alpha(0.86)).Border(2, t.Accent).BorderStyle(ui.BorderDashed).PassThrough().
-		Transition(ui.ElementTransition{Animation: &springPop, Enter: &ui.Motion{Scale: 0.97, Opacity: 0}, Exit: &ui.Motion{Opacity: 0}})
+		Radius(8).Background(t.Background.Alpha(0.9)).Border(1, t.Accent).BorderStyle(ui.BorderDashed).PassThrough().
+		Transition(ui.ElementTransition{Animation: &motionFade, Enter: &ui.Motion{Opacity: 0}, Exit: &ui.Motion{Opacity: 0}})
 	zone.Children(func() {
-		badge := ui.Box(c).Size(64, 64).Radius(20).Center().Background(p.AccentSoft)
-		badge.Children(func() {
-			ic := ui.Icon(c, icon("upload")).FontSize(28).TextColor(t.Accent)
-			ic.Translate(0, float32(sinTurn(ic.Loop("lift", 1400*time.Millisecond, ui.EaseInOut)))*4)
-		})
-		ui.Text(c, "松开以上传到「"+dirLabel(dir)+"」").FontSize(16).FontWeight(600)
+		ui.Icon(c, icon("upload")).FontSize(22).TextColor(t.Accent)
+		ui.Text(c, "松开以上传到「"+dirLabel(dir)+"」").FontSize(14).FontWeight(500)
 	})
 }
 
@@ -68,8 +67,8 @@ func entering(e ui.Element, l *listing, i int, now time.Time) float32 {
 	if now.Sub(l.shown) > entranceIn {
 		return 1
 	}
-	return e.Keyframes("in", []ui.Keyframe{{At: 0, Value: 0}, {At: 360 * time.Millisecond, Value: 1, Ease: ui.CubicBezier(0.2, 0.8, 0.2, 1)}},
-		ui.KeyframeOptions{Delay: time.Duration(min(i, 16)) * 24 * time.Millisecond})
+	return e.Keyframes("in", []ui.Keyframe{{At: 0, Value: 0}, {At: 180 * time.Millisecond, Value: 1, Ease: easeStandard}},
+		ui.KeyframeOptions{Delay: time.Duration(min(i, 16)) * 12 * time.Millisecond})
 }
 
 func (a *App) bindListState(l *listing) {
@@ -88,27 +87,30 @@ func (a *App) fileList(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 	a.bindListState(l)
 	now := c.Now()
 	a.listHeader(c, t, p)
-	list := ui.List(c, &l.list, len(l.files)).Grow(1).Padding(2, 12, 24)
+	list := ui.List(c, &l.list, len(l.files)).Grow(1).Padding(0, 12, 16)
 	list.Rows(func(row ui.ListRow) {
 		c := row.Context
 		f := &l.files[row.Index]
-		r := ui.Row(c).Height(rowHeight).PaddingX(12).Gap(12).AlignItems(ui.Center).Radius(t.Radius).TextColor(t.Text)
+		r := ui.Row(c).Height(rowHeight).PaddingX(10).Gap(10).AlignItems(ui.Center).Radius(t.Radius).TextColor(t.Text)
 		if row.Selected() {
 			r.Background(selectionFill(t, row.ListFocused()))
+		} else if r.Hovered() {
+			r.Background(p.Hover)
 		}
 		in := entering(r, l, row.Index, now)
 		if in < 1 {
-			r.Opacity(in).Translate(0, (1-in)*10)
+			r.Opacity(in).Translate(0, (1-in)*4)
 		}
 		r.Children(func() {
-			a.fileIcon(c, t, p, f, 34)
-			ui.Text(c, f.Name).Grow(1).Shrink(1).SingleLine().FontWeight(500)
-			size := "—"
+			a.fileIcon(c, t, p, f, 18)
+			ui.Text(c, f.Name).Grow(1).Shrink(1).SingleLine()
+			typ, size, sizeColor := "—", "—", p.Faint
 			if !f.IsDir {
-				size = humanSize(f.Size)
+				typ, size, sizeColor = typeLabel(f), humanSize(f.Size), t.Text
 			}
-			ui.Text(c, size).Width(96).TextAlign(ui.End).TextColor(t.TextMuted).FontFeatures("tnum").SingleLine()
-			ui.Text(c, humanTime(f.Mtime, now)).Width(150).TextAlign(ui.End).TextColor(t.TextMuted).SingleLine()
+			figure(c, typ).Width(colType).FontSize(11).TextColor(t.TextMuted)
+			figure(c, size).Width(colSize).TextAlign(ui.End).TextColor(sizeColor)
+			figure(c, stampTime(f.Mtime, now)).Width(colTime).TextAlign(ui.End).TextColor(t.TextMuted)
 		})
 		a.fileMenu(r, l, row.Index)
 	})
@@ -117,25 +119,33 @@ func (a *App) fileList(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 	}
 }
 
+// List columns, in the header and the rows.
+const (
+	colType = 56
+	colSize = 88
+	colTime = 110
+)
+
 // listHeader names the columns, sorting by the one clicked.
 func (a *App) listHeader(c *ui.Context, t *ui.Theme, p *palette) {
-	ui.Row(c).Height(30).Margin(0, 12).PaddingX(12).Gap(12).AlignItems(ui.Center).
-		BorderWidth(0, 0, 1, 0).BorderColor(p.Hairline).FontSize(t.Rem(0.86)).Children(func() {
-		col := func(label, by string, width float32, align ui.Align) {
-			h := ui.ButtonBase(c).Label("按" + label + "排序").Gap(4).AlignItems(ui.Center).TextColor(t.TextMuted)
+	ui.Row(c).Height(30).Margin(0, 12).PaddingX(10).Gap(10).AlignItems(ui.Center).
+		BorderWidth(0, 0, 1, 0).BorderColor(p.Hairline).Font(fontMono).FontSize(11).Children(func() {
+		col := func(label, by string, width float32) {
+			h := ui.ButtonBase(c).Label("按" + label + "排序").Gap(4).AlignItems(ui.Center).TextColor(p.Faint)
 			if width > 0 {
 				h.Width(width).Justify(ui.End)
 			} else {
-				h.Grow(1).Justify(ui.Start).MarginStart(46)
+				h.Grow(1).Justify(ui.Start).MarginStart(28)
 			}
 			if a.order.By == by {
+				h.TextColor(t.TextMuted)
+			} else if h.Hovered() {
 				h.TextColor(t.Text)
 			}
 			h.Children(func() {
-				ui.Text(c, label).FontWeight(560)
+				ui.Text(c, label)
 				if a.order.By == by {
-					ic := ui.Icon(c, icon("chevron-right")).FontSize(12)
-					ic.Rotate(ic.AnimateTo("dir", map[bool]float32{true: -90, false: 90}[a.order.Desc], springSoft))
+					ui.Text(c, map[bool]string{true: "↓", false: "↑"}[a.order.Desc])
 				}
 			})
 			if h.Clicked() {
@@ -146,9 +156,23 @@ func (a *App) listHeader(c *ui.Context, t *ui.Theme, p *palette) {
 				}
 			}
 		}
-		col("名称", "name", 0, ui.Start)
-		col("大小", "size", 96, ui.End)
-		col("修改时间", "time", 150, ui.End)
+		col("名称", "name", 0)
+		ui.Text(c, "类型").Width(colType).TextColor(p.Faint)
+		col("大小", "size", colSize)
+		col("修改时间", "time", colTime)
+	})
+}
+
+// statusBar is the line under the browser: how many items, and what the
+// transfers are doing.
+func (a *App) statusBar(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
+	ui.Row(c).Height(28).PaddingX(22).Gap(16).AlignItems(ui.Center).BorderWidth(1, 0, 0, 0).BorderColor(p.Hairline).
+		Background(p.Sidebar).Font(fontMono).FontSize(11).TextColor(p.Faint).Children(func() {
+		ui.Text(c, itoa(len(l.files))+" 项").FontFeatures("tnum")
+		ui.Spacer(c)
+		if n, speed := a.transferPulse(); n > 0 {
+			ui.Text(c, "↓ "+itoa(n)+" · "+humanSpeed(speed)).TextColor(t.Text).FontFeatures("tnum")
+		}
 	})
 }
 
@@ -162,13 +186,13 @@ func (a *App) fileGrid(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 			tile.Background(selectionFill(t, true))
 		}
 		in := entering(tile, l, i, now)
-		pose := ui.Pose{Y: (1 - in) * 14, Fade: 1 - in}
+		pose := ui.Pose{Y: (1 - in) * 4, Fade: 1 - in}
 		if tile.Hovered() && in == 1 {
 			pose.Y = -2
 		}
-		tile.AnimatePose(pose, springSoft)
+		tile.AnimatePose(pose, motionPanel)
 		tile.Children(func() {
-			box := ui.Box(c).Width(124).Height(112).Radius(12).Center().Clip()
+			box := ui.Box(c).Width(124).Height(112).Radius(5).Center().Clip()
 			k := kindOf(f)
 			if bmp := a.thumb(f); bmp != nil {
 				box.Children(func() {
@@ -176,7 +200,7 @@ func (a *App) fileGrid(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 						return // the preview shows it, grown from here
 					}
 					ui.Image(c, bmp).Fill().Fit(ui.Cover).
-						Transition(ui.ElementTransition{Enter: &ui.Motion{Opacity: 0}, Animation: &springPanel, Match: thumbMatch{f.FsID}})
+						Transition(ui.ElementTransition{Enter: &ui.Motion{Opacity: 0}, Animation: &motionPanel, Match: thumbMatch{f.FsID}})
 					if k == kindVideo {
 						ui.Box(c).Absolute().Bottom(6).Right(6).Size(22, 22).Radius(11).Center().
 							Background(ui.RGBA(0, 0, 0, 0.55)).TextColor(ui.Hex("#ffffff")).Children(func() {
@@ -185,12 +209,16 @@ func (a *App) fileGrid(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 					}
 				})
 			} else {
-				lk := k.look(p)
-				box.Background(lk.color.Alpha(0.12)).Children(func() {
-					ui.Icon(c, icon(lk.icon)).FontSize(44).TextColor(lk.color)
+				box.Border(1, p.Hairline).Children(func() {
+					if k == kindFolder {
+						folderGlyph(c, p, 56)
+						return
+					}
+					ui.Icon(c, icon(k.look(p).icon)).FontSize(36).TextColor(p.Faint)
+					figure(c, typeLabel(f)).Absolute().Bottom(6).Right(8).FontSize(10).TextColor(t.TextMuted)
 				})
 			}
-			ui.Text(c, f.Name).MaxLines(2).TextAlign(ui.Center).FontSize(t.Rem(0.92)).LineHeight(1.25)
+			ui.Text(c, f.Name).MaxLines(2).TextAlign(ui.Center).LineHeight(1.25)
 		})
 		a.fileMenu(tile, l, i)
 	}).Grow(1).Padding(10, 16, 24).Gap(6)
@@ -199,26 +227,70 @@ func (a *App) fileGrid(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 	}
 }
 
-// fileIcon shows a file's thumbnail, or its kind's icon on a tint.
+// fileIcon shows a file's thumbnail, else a solid folder, else its kind's
+// icon in a single quiet color.
 func (a *App) fileIcon(c *ui.Context, t *ui.Theme, p *palette, f *baidu.File, size float32) {
 	k := kindOf(f)
-	box := ui.Box(c).Size(size, size).Radius(size * 0.26).Center().Clip()
 	if k.hasThumb() {
 		if bmp := a.thumb(f); bmp != nil {
-			box.Children(func() {
+			ui.Box(c).Size(size, size).Radius(3).Clip().Children(func() {
 				if a.previewing(f) {
 					return
 				}
 				ui.Image(c, bmp).Fill().Fit(ui.Cover).
-					Transition(ui.ElementTransition{Enter: &ui.Motion{Opacity: 0, Scale: 0.9}, Animation: &springPanel, Match: thumbMatch{f.FsID}})
+					Transition(ui.ElementTransition{Enter: &ui.Motion{Opacity: 0}, Animation: &motionPanel, Match: thumbMatch{f.FsID}})
 			})
 			return
 		}
 	}
-	lk := k.look(p)
-	box.Background(lk.color.Alpha(0.13)).Children(func() {
-		ui.Icon(c, icon(lk.icon)).FontSize(size * 0.52).TextColor(lk.color)
+	if k == kindFolder {
+		folderGlyph(c, p, size)
+		return
+	}
+	ui.Box(c).Size(size, size).Center().Children(func() {
+		ui.Icon(c, icon(k.look(p).icon)).FontSize(size * 0.92).TextColor(t.TextMuted)
 	})
+}
+
+// folderGlyph is a folder, solid in the folder color: the one color a
+// file list shows, as it is what tells folders apart.
+func folderGlyph(c *ui.Context, p *palette, size float32) ui.Element {
+	color := p.Folder
+	return ui.Box(c).Size(size, size).Draw(func(pt *ui.Painter, r ui.Rect) {
+		s := r.W / 24
+		at := func(x, y float32) (float32, float32) { return r.X + x*s, r.Y + y*s }
+		var path ui.Path
+		path.MoveTo(at(2.5, 6.5))
+		qx, qy := at(2.5, 5)
+		ex, ey := at(4, 5)
+		path.QuadTo(qx, qy, ex, ey)
+		path.LineTo(at(9.2, 5))
+		path.LineTo(at(11.2, 7.2))
+		path.LineTo(at(20, 7.2))
+		qx, qy = at(21.5, 7.2)
+		ex, ey = at(21.5, 8.7)
+		path.QuadTo(qx, qy, ex, ey)
+		path.LineTo(at(21.5, 18))
+		qx, qy = at(21.5, 19.5)
+		ex, ey = at(20, 19.5)
+		path.QuadTo(qx, qy, ex, ey)
+		path.LineTo(at(4, 19.5))
+		qx, qy = at(2.5, 19.5)
+		ex, ey = at(2.5, 18)
+		path.QuadTo(qx, qy, ex, ey)
+		path.Close()
+		pt.FillPath(&path, color)
+	})
+}
+
+// typeLabel is a file's type in a few capitals: its extension, else its
+// kind.
+func typeLabel(f *baidu.File) string {
+	ext := strings.ToUpper(strings.TrimPrefix(path.Ext(f.Name), "."))
+	if ext != "" && len(ext) <= 5 {
+		return ext
+	}
+	return kindOf(f).look(nil).label
 }
 
 // fileMenu gives a file's row its context menu, acting on the files
@@ -282,21 +354,21 @@ func (a *App) breadcrumbs(c *ui.Context, t *ui.Theme, p *palette, dir string) {
 				continue
 			}
 			if i > 0 {
-				ui.Icon(c, icon("chevron-right")).FontSize(14).TextColor(t.TextMuted)
+				ui.Text(c, "/").Font(fontMono).TextColor(p.Faint)
 			}
 			if i == 1 && start > 1 {
 				ui.Text(c, "…").TextColor(t.TextMuted).PaddingX(4)
-				ui.Icon(c, icon("chevron-right")).FontSize(14).TextColor(t.TextMuted)
+				ui.Text(c, "/").Font(fontMono).TextColor(p.Faint)
 			}
 			label := parts[i]
 			if i == 0 {
 				label = "我的文件"
 			}
 			last := i == len(parts)-1
-			crumb := ui.ButtonBase(c.Key(i)).Label(label).Height(30).PaddingX(8).Radius(8).Shrink(1).
-				Transition(ui.ElementTransition{Animation: &springSoft, Enter: &ui.Motion{X: 12, Opacity: 0}, Exit: &ui.Motion{Opacity: 0}})
+			crumb := ui.ButtonBase(c.Key(i)).Label(label).Height(28).PaddingX(6).Radius(5).Shrink(1).
+				Transition(ui.ElementTransition{Animation: &motionPanel, Enter: &ui.Motion{X: 6, Opacity: 0}, Exit: &ui.Motion{Opacity: 0}})
 			if last {
-				crumb.FontWeight(650).FontSize(16)
+				crumb.FontWeight(600).FontSize(15)
 			} else {
 				crumb.TextColor(t.TextMuted)
 				if crumb.Hovered() {
@@ -337,34 +409,30 @@ func (a *App) filesToolbar(c *ui.Context, t *ui.Theme, p *palette, dir string) {
 	a.viewSwitch(c, t, p)
 }
 
-// viewSwitch toggles between the list and the grid, its thumb gliding.
+// viewSwitch toggles between the list and the grid: an outlined pair,
+// the chosen one filled with the line color.
 func (a *App) viewSwitch(c *ui.Context, t *ui.Theme, p *palette) {
 	chosen := 0
 	if a.gridView {
 		chosen = 1
 	}
 	seg := ui.SegmentedBase(c, &chosen, 2)
-	seg.Track.Height(32).Padding(3).Radius(10).Background(t.Surface).Label("视图")
-	x := seg.Track.AnimateTo("thumb", float32(chosen), springSoft)
-	thumb, shadow := p.Card, p.Shadow
-	if t.Dark {
-		thumb = t.SurfacePressed
-	}
+	seg.Track.Height(30).Radius(5).Border(1, p.Hairline).Clip().Label("视图")
+	x := seg.Track.AnimateTo("thumb", float32(chosen), motionPanel)
+	thumb := p.Hairline
 	seg.Track.Draw(func(pt *ui.Painter, r ui.Rect) {
-		w := float32(32)
-		th := ui.Rect{X: r.X + 3 + x*w, Y: r.Y + 3, W: w, H: r.H - 6}
-		pt.Shadow(th, 7, 0, 1, 2, 0, shadow)
-		pt.Fill(th, thumb, 7)
+		w := float32(30)
+		pt.Fill(ui.Rect{X: r.X + 1 + x*w, Y: r.Y + 1, W: w, H: r.H - 2}, thumb, 0)
 	})
 	seg.Track.Children(func() {
 		for i, ic := range []string{"list", "layout-grid"} {
-			s := seg.Segment(i).Width(32).Center().Label([]string{"列表", "网格"}[i])
-			color := t.TextMuted
+			s := seg.Segment(i).Width(30).Center().Label([]string{"列表", "网格"}[i])
+			color := p.Faint
 			if i == chosen {
 				color = t.Text
 			}
-			s.TextColor(s.AnimateColor("fg", color, fadeQuick))
-			s.Children(func() { ui.Icon(c, icon(ic)).FontSize(15) })
+			s.TextColor(s.AnimateColor("fg", color, motionHover))
+			s.Children(func() { ui.Icon(c, icon(ic)).FontSize(14) })
 		}
 	})
 	a.gridView = chosen == 1

@@ -36,7 +36,7 @@ func main() {
 			MinHeight:       540,
 			StateKey:        "main",
 			TitleBarStyle:   mygo.TitleBarHidden,
-			BackgroundColor: "light-dark(#fbfbfc, #0f1013)",
+			BackgroundColor: "light-dark(#fafaf8, #131312)",
 			Content:         ui.View(a.View),
 		})
 		a.Attach(win)

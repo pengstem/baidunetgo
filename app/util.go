@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -59,6 +60,36 @@ func humanTime(unix int64, now time.Time) string {
 		return t.Format("1月2日 15:04")
 	}
 	return t.Format("2006/01/02")
+}
+
+// stampTime writes when a file changed, as a list column shows it: the
+// time today, the day this year, the date before.
+func stampTime(unix int64, now time.Time) string {
+	t := time.Unix(unix, 0)
+	switch {
+	case t.Year() == now.Year() && t.YearDay() == now.YearDay():
+		return "今天 " + t.Format("15:04")
+	case t.Year() == now.Year():
+		return t.Format("01-02 15:04")
+	}
+	return t.Format("2006-01-02")
+}
+
+// shortSize writes a size in the fewest characters: 734G, 1.5T.
+func shortSize(n int64) string {
+	s := strings.ReplaceAll(humanSize(n), " ", "")
+	if strings.HasSuffix(s, "B") && len(s) > 2 && s[len(s)-2] >= 'A' {
+		s = s[:len(s)-1]
+	}
+	return s
+}
+
+// tildePath writes a local path with the home folder as ~.
+func tildePath(p string) string {
+	if home, err := os.UserHomeDir(); err == nil && home != "" && strings.HasPrefix(p, home) {
+		return "~" + strings.TrimPrefix(p, home)
+	}
+	return p
 }
 
 // humanSpeed writes bytes per second.

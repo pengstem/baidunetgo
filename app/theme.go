@@ -6,17 +6,23 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
+// The look follows the 刻度 design system: warm neutral grays, one sky
+// blue for what is happening (selection, progress, the main action), lines
+// rather than cards, and figures set in a monospaced face.
+
 // palette holds the colors of the app beyond those of the theme.
 type palette struct {
-	Sidebar    ui.Color // the sidebar's backdrop
-	Card       ui.Color // raised panels
-	Hover      ui.Color // rows under the pointer
-	Selected   ui.Color // chosen rows
-	Scrim      ui.Color // behind dialogs and previews
-	Hairline   ui.Color // thin separators
-	Shadow     ui.Color
-	AccentSoft ui.Color // tinted backgrounds of accent things
-	Folder     ui.Color
+	Sidebar  ui.Color // the sidebar's backdrop
+	Card     ui.Color // dialogs, menus and popovers
+	Raised   ui.Color // the chosen sidebar row, segmented thumbs
+	Hover    ui.Color // rows under the pointer
+	Selected ui.Color // chosen rows
+	Scrim    ui.Color // behind dialogs and previews
+	Hairline ui.Color // separators and outlines
+	Faint    ui.Color // the quietest text: column heads, units, hints
+	Shadow   ui.Color // under dialogs only
+	Folder   ui.Color
+	VIP      ui.Color // membership labels, outlined
 }
 
 var (
@@ -25,62 +31,77 @@ var (
 )
 
 func init() {
-	accentLight := ui.Oklch(0.58, 0.19, 262)
-	accentDark := ui.Oklch(0.7, 0.15, 262)
+	accentLight := ui.Hex("#0a6fb0")
+	accentDark := ui.Hex("#2aa8f2")
 
 	t := ui.LightTheme()
-	t.Background = ui.Hex("#fbfbfc")
-	t.Surface = ui.Hex("#f1f2f5")
-	t.SurfaceHover = ui.Hex("#e8e9ee")
-	t.SurfacePressed = ui.Hex("#dedfe5")
-	t.Border = ui.Hex("#e2e3e8")
-	t.Text = ui.Hex("#16171b")
-	t.TextMuted = ui.Hex("#6c707b")
+	t.Background = ui.Hex("#fafaf8")
+	t.Surface = ui.Hex("#f0f0ec")
+	t.SurfaceHover = ui.Hex("#e8e8e3")
+	t.SurfacePressed = ui.Hex("#dfdfd9")
+	t.Border = ui.Hex("#e4e4df")
+	t.Text = ui.Hex("#1b1b19")
+	t.TextMuted = ui.Hex("#5e5e58")
 	t.Accent = accentLight
-	t.AccentHover = ui.Oklch(0.53, 0.19, 262)
-	t.AccentPressed = ui.Oklch(0.48, 0.19, 262)
-	t.Selection = accentLight.Alpha(0.22)
+	t.AccentHover = ui.Hex("#0a64a0")
+	t.AccentPressed = ui.Hex("#085a90")
+	t.AccentText = ui.Hex("#ffffff")
+	t.Danger = ui.Hex("#d2402f")
+	t.Success = ui.Hex("#1f9d63")
+	t.Warning = ui.Hex("#b97a12")
+	t.Selection = accentLight.Alpha(0.2)
 	t.Focus = accentLight.Alpha(0.5)
-	t.Radius = 8
+	t.Radius = 5
+	t.Font = fontSans
+	t.FontSize = 13
 	lightTheme = t
 	lightPalette = palette{
-		Sidebar:    ui.Hex("#f3f4f7"),
-		Card:       ui.Hex("#ffffff"),
-		Hover:      ui.RGBA(20, 24, 40, 0.045),
-		Selected:   accentLight.Alpha(0.12),
-		Scrim:      ui.RGBA(12, 14, 20, 0.38),
-		Hairline:   ui.RGBA(20, 24, 40, 0.08),
-		Shadow:     ui.RGBA(16, 20, 40, 0.12),
-		AccentSoft: accentLight.Alpha(0.1),
-		Folder:     ui.Oklch(0.78, 0.13, 80),
+		Sidebar:  ui.Hex("#f2f2ef"),
+		Card:     ui.Hex("#ffffff"),
+		Raised:   ui.Hex("#e6e6e1"),
+		Hover:    ui.RGBA(27, 27, 25, 0.045),
+		Selected: accentLight.Alpha(0.12),
+		Scrim:    ui.RGBA(20, 20, 18, 0.36),
+		Hairline: ui.Hex("#e4e4df"),
+		Faint:    ui.Hex("#6f6f69"),
+		Shadow:   ui.RGBA(20, 20, 18, 0.14),
+		Folder:   ui.Hex("#d4951f"),
+		VIP:      ui.Hex("#a8700c"),
 	}
 
 	d := ui.DarkTheme()
-	d.Background = ui.Hex("#111216")
-	d.Surface = ui.Hex("#1c1d22")
-	d.SurfaceHover = ui.Hex("#25272d")
-	d.SurfacePressed = ui.Hex("#2e3037")
-	d.Border = ui.Hex("#2b2d34")
-	d.Text = ui.Hex("#eceef2")
-	d.TextMuted = ui.Hex("#8d919c")
+	d.Background = ui.Hex("#131312")
+	d.Surface = ui.Hex("#1f1f1e")
+	d.SurfaceHover = ui.Hex("#262625")
+	d.SurfacePressed = ui.Hex("#2c2c2a")
+	d.Border = ui.Hex("#2a2a28")
+	d.Text = ui.Hex("#ecece8")
+	d.TextMuted = ui.Hex("#a3a39d")
 	d.Accent = accentDark
-	d.AccentHover = ui.Oklch(0.75, 0.14, 262)
-	d.AccentPressed = ui.Oklch(0.64, 0.15, 262)
-	d.AccentText = ui.Hex("#0b0c10")
+	d.AccentHover = ui.Hex("#4db6f4")
+	d.AccentPressed = ui.Hex("#1e95db")
+	d.AccentText = ui.Hex("#061520")
+	d.Danger = ui.Hex("#ef6b5a")
+	d.Success = ui.Hex("#3fc28a")
+	d.Warning = ui.Hex("#e3a93b")
 	d.Selection = accentDark.Alpha(0.3)
 	d.Focus = accentDark.Alpha(0.6)
-	d.Radius = 8
+	d.Radius = 5
+	d.Font = fontSans
+	d.FontSize = 13
 	darkTheme = d
 	darkPalette = palette{
-		Sidebar:    ui.Hex("#16171b"),
-		Card:       ui.Hex("#18191e"),
-		Hover:      ui.RGBA(255, 255, 255, 0.045),
-		Selected:   accentDark.Alpha(0.16),
-		Scrim:      ui.RGBA(0, 0, 0, 0.55),
-		Hairline:   ui.RGBA(255, 255, 255, 0.07),
-		Shadow:     ui.RGBA(0, 0, 0, 0.45),
-		AccentSoft: accentDark.Alpha(0.12),
-		Folder:     ui.Oklch(0.8, 0.12, 80),
+		Sidebar:  ui.Hex("#191918"),
+		Card:     ui.Hex("#1c1c1b"),
+		Raised:   ui.Hex("#252524"),
+		Hover:    ui.RGBA(255, 255, 255, 0.04),
+		Selected: accentDark.Alpha(0.14),
+		Scrim:    ui.RGBA(0, 0, 0, 0.55),
+		Hairline: ui.Hex("#2a2a28"),
+		Faint:    ui.Hex("#858580"),
+		Shadow:   ui.RGBA(0, 0, 0, 0.45),
+		Folder:   ui.Hex("#e3a93b"),
+		VIP:      ui.Hex("#e3a93b"),
 	}
 }
 
@@ -95,24 +116,30 @@ func applyTheme(c *ui.Context) (*ui.Theme, *palette) {
 	return lightTheme, &lightPalette
 }
 
-// Motion shared across the app, so that it moves as one.
+// Motion shared across the app: one curve, no bounce, and three lengths
+// by what moves.
 var (
-	springSoft  = ui.Animation{Spring: ui.SpringOptions{Duration: 420 * time.Millisecond, Bounce: 0.08}}
-	springPop   = ui.Animation{Spring: ui.SpringOptions{Duration: 380 * time.Millisecond, Bounce: 0.22}}
-	springPanel = ui.Animation{Spring: ui.SpringOptions{Duration: 520 * time.Millisecond, Bounce: 0.04}}
-	fadeQuick   = ui.Animation{Duration: 140 * time.Millisecond, Ease: ui.EaseOut}
+	easeStandard = ui.CubicBezier(0.2, 0, 0, 1)
 
-	// rowEnter brings rows in from a little below, faded.
+	motionHover = ui.Animation{Duration: 120 * time.Millisecond, Ease: easeStandard} // colors under the pointer
+	motionFade  = ui.Animation{Duration: 160 * time.Millisecond, Ease: easeStandard} // menus, tips, dialogs
+	motionPanel = ui.Animation{Duration: 180 * time.Millisecond, Ease: easeStandard} // panels, pages, shared elements
+
+	// navIconRun is how long a sidebar icon's gesture takes, delays
+	// included: the one motion over 180 ms, as it goes and comes back.
+	navIconRun = 360 * time.Millisecond
+
+	// rowEnter brings rows in faded, from a little below.
 	rowEnter = ui.ElementTransition{
-		Animation: &springSoft,
-		Enter:     &ui.Motion{Y: 10, Opacity: 0},
+		Animation: &motionPanel,
+		Enter:     &ui.Motion{Y: 4, Opacity: 0},
 		Exit:      &ui.Motion{Opacity: 0, Collapse: true},
 	}
-	// popIn grows panels in from a little smaller.
+	// popIn fades panels in from a hair smaller.
 	popIn = ui.ElementTransition{
-		Animation: &springPop,
-		Enter:     &ui.Motion{Scale: 0.94, Opacity: 0},
-		Exit:      &ui.Motion{Scale: 0.96, Opacity: 0},
+		Animation: &motionFade,
+		Enter:     &ui.Motion{Scale: 0.98, Opacity: 0},
+		Exit:      &ui.Motion{Opacity: 0},
 	}
 )
 
@@ -122,6 +149,6 @@ func stagger(a ui.Animation, i int) *ui.Animation {
 	if i > 14 {
 		i = 14
 	}
-	a.Delay = time.Duration(i) * 22 * time.Millisecond
+	a.Delay = time.Duration(i) * 16 * time.Millisecond
 	return &a
 }

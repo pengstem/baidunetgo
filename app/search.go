@@ -61,7 +61,7 @@ func (a *App) searchPage(c *ui.Context, t *ui.Theme, p *palette, q string) {
 			ui.Text(c, "找到 "+itoa(len(s.results))+" 个结果").TextColor(t.TextMuted).Padding(4, 24, 8)
 			list := ui.List(c, &s.list, len(s.results), func(i int) {
 				f := s.results[i]
-				row := ui.Row(c.Key(f.FsID)).Height(rowHeight + 4).PaddingX(12).Gap(12).AlignItems(ui.Center).Radius(10)
+				row := ui.Row(c.Key(f.FsID)).Height(rowHeight + 4).PaddingX(12).Gap(12).AlignItems(ui.Center).Radius(5)
 				if row.Hovered() {
 					row.Background(p.Hover)
 				}
@@ -114,7 +114,7 @@ func (a *App) searchField(c *ui.Context, t *ui.Theme, p *palette) {
 	if f.FocusWithin() || a.query != "" {
 		w = 260
 	}
-	f.Width(f.AnimateTo("w", w, springSoft))
+	f.Width(f.AnimateTo("w", w, motionPanel))
 	if f.Submitted() {
 		a.search(a.query)
 	}

@@ -62,7 +62,7 @@ func (a *App) recyclePage(c *ui.Context, t *ui.Theme, p *palette) {
 			now := c.Now()
 			ui.List(c, &r.list, len(r.items), func(i int) {
 				it := r.items[i]
-				row := ui.Row(c.Key(it.FsID)).Height(rowHeight).PaddingX(12).Gap(12).AlignItems(ui.Center).Radius(10)
+				row := ui.Row(c.Key(it.FsID)).Height(rowHeight).PaddingX(12).Gap(12).AlignItems(ui.Center).Radius(5)
 				if row.Hovered() {
 					row.Background(p.Hover)
 				}

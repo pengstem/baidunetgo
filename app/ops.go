@@ -8,7 +8,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/egoist/mygo/plugins/glass"
 	"github.com/egoist/mygo/ui"
 
 	"github.com/pengstem/baidunetgo/internal/baidu"
@@ -146,9 +145,9 @@ func (a *App) dialogs(c *ui.Context, t *ui.Theme, p *palette) {
 	}
 	open := d.open
 	ui.DialogBase(c, &d.open, func(backdrop, panel ui.Element) {
-		backdrop.Material(glass.Blur{Radius: 10}).Background(p.Scrim)
-		panel.Width(420).Padding(24).Gap(16).Radius(18).Background(p.Card).Border(1, p.Hairline).
-			Shadow(0, 30, 70, -20, p.Shadow).Transition(popIn)
+		backdrop.Background(p.Scrim)
+		panel.Width(420).Padding(20).Gap(14).Radius(8).Background(p.Card).Border(1, p.Hairline).
+			Shadow(0, 16, 40, -12, p.Shadow).Transition(popIn)
 		switch d.kind {
 		case dlgNewFolder:
 			a.nameDialog(c, t, p, "新建文件夹", "在「"+dirLabel(d.dir)+"」中", "创建")
@@ -180,7 +179,7 @@ func dirLabel(dir string) string {
 
 func dialogTitle(c *ui.Context, t *ui.Theme, title, detail string) {
 	ui.Column(c).Gap(4).Children(func() {
-		ui.Text(c, title).FontSize(17).FontWeight(650)
+		ui.Text(c, title).FontSize(15).FontWeight(600)
 		if detail != "" {
 			ui.Text(c, detail).TextColor(t.TextMuted).SingleLine()
 		}
@@ -204,7 +203,7 @@ func (a *App) dialogButtons(c *ui.Context, t *ui.Theme, p *palette, label string
 			b.AutoFocus() // Enter presses it
 		}
 		if danger {
-			b.Background(t.Danger).Shadow(0, 4, 12, -4, t.Danger.Alpha(0.6))
+			b.Background(t.Danger).TextColor(ui.Hex("#ffffff"))
 		}
 		if d.busy {
 			b.Children(func() { ui.Spinner(c).TextColor(t.AccentText) })
@@ -253,9 +252,7 @@ func (a *App) nameDialog(c *ui.Context, t *ui.Theme, p *palette, title, detail, 
 func (a *App) deleteDialog(c *ui.Context, t *ui.Theme, p *palette) {
 	d := &a.dlg
 	ui.Row(c).Gap(14).AlignItems(ui.Start).Children(func() {
-		ui.Box(c).Size(40, 40).Radius(12).Center().Background(t.Danger.Alpha(0.12)).Children(func() {
-			ui.Icon(c, icon("trash-2")).FontSize(19).TextColor(t.Danger)
-		})
+		ui.Icon(c, icon("trash-2")).FontSize(18).TextColor(t.Danger).Margin(2, 0, 0)
 		ui.Column(c).Grow(1).Shrink(1).Children(func() {
 			dialogTitle(c, t, "删除"+countLabel(d.files)+"？", "")
 			ui.Text(c, "文件会移到回收站，保留一段时间后自动清除。").TextColor(t.TextMuted).Margin(4, 0, 0)
@@ -300,15 +297,15 @@ func (a *App) selectionBar(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 	if len(files) == 0 {
 		return
 	}
-	bar := ui.Row(c).Key("selbar").Absolute().Bottom(22).Attach(ui.AnchorBottom, ui.AnchorBottom).
-		Padding(6, 6, 6, 16).Gap(4).Radius(16).AlignItems(ui.Center).
-		Material(glass.Glass{}).Shadow(0, 18, 40, -14, p.Shadow).
-		Transition(ui.ElementTransition{Animation: &springPop, Enter: &ui.Motion{Y: 30, Scale: 0.9, Opacity: 0}, Exit: &ui.Motion{Y: 20, Opacity: 0}})
+	bar := ui.Row(c).Key("selbar").Absolute().Bottom(40).Attach(ui.AnchorBottom, ui.AnchorBottom).
+		Padding(4, 4, 4, 14).Gap(2).Radius(8).AlignItems(ui.Center).
+		Background(p.Card).Border(1, p.Hairline).Shadow(0, 8, 24, -10, p.Shadow).
+		Transition(ui.ElementTransition{Animation: &motionFade, Enter: &ui.Motion{Y: 8, Opacity: 0}, Exit: &ui.Motion{Opacity: 0}})
 	bar.Children(func() {
-		ui.Text(c, "已选 "+itoa(len(files))+" 项").FontWeight(600).Margin(0, 10, 0, 0).FontFeatures("tnum").
+		ui.Text(c, "已选 "+itoa(len(files))+" 项").FontWeight(500).Margin(0, 10, 0, 0).FontFeatures("tnum").
 			ContentTransition(ui.ContentTransition{Numeric: true})
 		action := func(ic, label string) bool {
-			b := ui.ButtonBase(c).Label(label).Height(34).PaddingX(10).Radius(10).Gap(6).AlignItems(ui.Center)
+			b := ui.ButtonBase(c).Label(label).Height(30).PaddingX(10).Radius(5).Gap(6).AlignItems(ui.Center)
 			if b.Hovered() {
 				b.Background(p.Hover)
 			}
@@ -333,7 +330,7 @@ func (a *App) selectionBar(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 		if len(files) == 1 && action("pencil", "重命名") {
 			a.ask(dlgRename, l.dir, files)
 		}
-		del := ui.ButtonBase(c).Label("删除").Height(34).PaddingX(10).Radius(10).Gap(6).AlignItems(ui.Center).TextColor(t.Danger)
+		del := ui.ButtonBase(c).Label("删除").Height(30).PaddingX(10).Radius(5).Gap(6).AlignItems(ui.Center).TextColor(t.Danger)
 		if del.Hovered() {
 			del.Background(t.Danger.Alpha(0.1))
 		}

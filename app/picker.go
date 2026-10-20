@@ -106,7 +106,7 @@ func (a *App) folderChooser(c *ui.Context, t *ui.Theme, p *palette, pk *picker, 
 		ui.Icon(c, icon("folder")).FontSize(16).TextColor(p.Folder)
 		ui.Text(c, dirLabel(pk.dir)).FontWeight(600).SingleLine().ContentTransition(ui.ContentTransition{})
 	})
-	box := ui.Column(c).Height(height).Radius(12).Background(t.Surface).Clip()
+	box := ui.Column(c).Height(height).Radius(5).Border(1, p.Hairline).Clip()
 	box.Children(func() {
 		folders, ok := a.pickerFolders(pk, pk.dir)
 		switch {

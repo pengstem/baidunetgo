@@ -4,6 +4,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/egoist/mygo"
@@ -123,6 +124,18 @@ func (a *App) activeTransfers() int {
 	return n
 }
 
+// transferPulse returns how many tasks run and their speed together.
+func (a *App) transferPulse() (int, float64) {
+	n, speed := 0, 0.0
+	for _, t := range a.transfers.tasks {
+		if t.State == transfer.Running {
+			n++
+			speed += t.Speed
+		}
+	}
+	return n, speed
+}
+
 func (a *App) transfersPage(c *ui.Context, t *ui.Theme, p *palette) {
 	x := &a.transfers
 	var going, done []transfer.Task
@@ -138,8 +151,9 @@ func (a *App) transfersPage(c *ui.Context, t *ui.Theme, p *palette) {
 		shown = done
 	}
 	ui.Column(c).Grow(1).Children(func() {
-		ui.Row(c).Padding(4, 24, 12).Children(func() {
+		ui.Row(c).Padding(4, 24, 12).Gap(24).AlignItems(ui.Center).Children(func() {
 			tabs(c, t, p, &x.tab, "进行中 "+itoa(len(going)), "已完成 "+itoa(len(done)))
+			a.transferSummary(c, t, p)
 		})
 		if len(shown) == 0 {
 			if x.tab == 0 {
@@ -152,55 +166,124 @@ func (a *App) transfersPage(c *ui.Context, t *ui.Theme, p *palette) {
 		x.list.Key = func(i int) any { return shown[i].ID }
 		ui.List(c, &x.list, len(shown), func(i int) {
 			a.transferRow(c, t, p, shown[i])
-		}).Grow(1).Padding(0, 12, 24).Gap(2)
+		}).Grow(1).Padding(0, 24, 24).Dividers(1, p.Hairline)
+	})
+}
+
+// transferSummary is one line of what the transfers do together: the
+// speed, then the tasks by direction and the connections.
+func (a *App) transferSummary(c *ui.Context, t *ui.Theme, p *palette) {
+	var down, up, queued int
+	var speed float64
+	for _, task := range a.transfers.tasks {
+		switch {
+		case task.State == transfer.Queued:
+			queued++
+		case task.State != transfer.Running:
+		case task.Kind == transfer.Download:
+			down++
+			speed += task.Speed
+		default:
+			up++
+			speed += task.Speed
+		}
+	}
+	if down+up == 0 {
+		return
+	}
+	cfg := a.transferConfig()
+	ui.Row(c).Gap(20).AlignItems(ui.End).Font(fontMono).FontFeatures("tnum").TextColor(t.TextMuted).Children(func() {
+		ui.Row(c).Gap(4).AlignItems(ui.End).Children(func() {
+			n, unit, _ := strings.Cut(humanSpeed(speed), " ")
+			ui.Text(c, n).FontSize(22).FontWeight(500).TextColor(t.Text).ContentTransition(ui.ContentTransition{Numeric: true})
+			ui.Text(c, unit)
+		})
+		line := "↓ " + itoa(down) + "  ↑ " + itoa(up)
+		if queued > 0 {
+			line += "  排队 " + itoa(queued)
+		}
+		ui.Text(c, line).SingleLine()
+		ui.Text(c, itoa(cfg.Threads)+" 连接 × "+itoa(cfg.Parallel)+" 文件").TextColor(p.Faint).SingleLine()
 	})
 }
 
 func (a *App) transferRow(c *ui.Context, t *ui.Theme, p *palette, task transfer.Task) {
-	row := ui.Row(c.Key(task.ID)).Height(66).PaddingX(12).Gap(14).AlignItems(ui.Center).Radius(12)
-	if row.Hovered() {
-		row.Background(p.Hover)
-	}
+	col := ui.Column(c.Key(task.ID)).Padding(10, 0).Gap(8)
 	f := baidu.File{Name: task.Name, Path: task.Remote}
-	row.Children(func() {
-		ui.Box(c).Children(func() {
-			a.fileIcon(c, t, p, &f, 38)
-			ic, color := "download", t.Accent
+	col.Children(func() {
+		ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
+			dir, color := "↓", t.Accent
 			if task.Kind == transfer.Upload {
-				ic, color = "upload", t.Success
+				dir, color = "↑", t.Success
 			}
-			ui.Box(c).Absolute().Right(-5).Bottom(-5).Size(18, 18).Radius(9).Center().Background(color).
-				Border(2, t.Background).TextColor(ui.Hex("#ffffff")).Children(func() {
-				ui.Icon(c, icon(ic)).FontSize(9)
+			if task.State != transfer.Running {
+				color = p.Faint
+			}
+			figure(c, dir).Width(12).TextColor(color)
+			a.fileIcon(c, t, p, &f, 18)
+			ui.Text(c, task.Name).FontWeight(500).SingleLine().Shrink(1)
+			ui.Spacer(c)
+			detail := figure(c, transferDetail(task)).FontSize(12).TextColor(t.TextMuted).Shrink(1)
+			if task.State == transfer.Failed {
+				detail.TextColor(t.Danger)
+			}
+			ui.Row(c).Gap(2).Children(func() { a.transferActions(c, t, p, task) })
+		})
+		if task.State != transfer.Done {
+			frac := float32(0)
+			if task.Size > 0 {
+				frac = float32(float64(task.Done) / float64(task.Size))
+			}
+			ui.Row(c).Gap(12).AlignItems(ui.Center).PaddingStart(50).Children(func() {
+				blockBar(c, t, p, task, frac).Grow(1)
+				figure(c, itoa(int(frac*100))+"%").Width(36).FontSize(12).TextAlign(ui.End)
 			})
-		})
-		ui.Column(c).Grow(1).Shrink(1).Gap(6).Children(func() {
-			ui.Text(c, task.Name).FontWeight(500).SingleLine()
-			if task.State != transfer.Done {
-				frac := float32(0)
-				if task.Size > 0 {
-					frac = float32(float64(task.Done) / float64(task.Size))
-				}
-				track := ui.Box(c).Height(4).Radius(2).Background(p.Hairline).Clip()
-				track.Children(func() {
-					color := t.Accent
-					switch task.State {
-					case transfer.Paused, transfer.Queued:
-						color = t.TextMuted
-					case transfer.Failed:
-						color = t.Danger
-					}
-					bar := ui.Box(c).Height(4).Radius(2).Background(color)
-					bar.WidthPercent(bar.AnimateTo("p", frac*100, springSoft))
-				})
-			}
-			ui.Text(c, transferDetail(task)).FontSize(t.Rem(0.84)).TextColor(t.TextMuted).FontFeatures("tnum").SingleLine()
-		})
-		a.transferActions(c, t, p, task)
+		}
 	})
-	if task.State == transfer.Done && row.DoubleClicked() && task.Kind == transfer.Download {
+	if task.State == transfer.Done && col.DoubleClicked() && task.Kind == transfer.Download {
 		mygo.Shell.OpenPath(task.Local)
 	}
+}
+
+// blockBar shows a task's progress as a row of cells, each a slice of
+// the file: filled when fetched, outlined while the connections work on
+// it, dark while it waits.
+func blockBar(c *ui.Context, t *ui.Theme, p *palette, task transfer.Task, frac float32) ui.Element {
+	color := t.Accent
+	switch task.State {
+	case transfer.Paused, transfer.Queued:
+		color = t.TextMuted
+	case transfer.Failed:
+		color = t.Danger
+	}
+	running := task.State == transfer.Running
+	waiting := p.Hairline
+	bar := ui.Box(c).Height(12)
+	shown := bar.AnimateTo("p", frac, motionPanel)
+	return bar.Draw(func(pt *ui.Painter, r ui.Rect) {
+		const w, gap = 5, 2
+		n := int((r.W + gap) / (w + gap))
+		if n <= 0 {
+			return
+		}
+		filled := int(shown * float32(n))
+		live := 0
+		if running && filled < n {
+			live = min(3, n-filled)
+		}
+		for i := range n {
+			cell := ui.Rect{X: r.X + float32(i)*(w+gap), Y: r.Y, W: w, H: r.H}
+			switch {
+			case i < filled:
+				pt.Fill(cell, color, 1)
+			case i < filled+live:
+				pt.Fill(cell, color, 1)
+				pt.Fill(ui.Rect{X: cell.X + 1, Y: cell.Y + 1, W: cell.W - 2, H: cell.H - 2}, t.Background, 0)
+			default:
+				pt.Fill(cell, waiting, 1)
+			}
+		}
+	})
 }
 
 func transferDetail(task transfer.Task) string {
@@ -277,28 +360,6 @@ func (a *App) transfersToolbar(c *ui.Context, t *ui.Theme, p *palette) {
 	if m == nil {
 		return
 	}
-	var down, up float64
-	for _, task := range a.transfers.tasks {
-		if task.State == transfer.Running {
-			if task.Kind == transfer.Download {
-				down += task.Speed
-			} else {
-				up += task.Speed
-			}
-		}
-	}
-	if down > 0 || up > 0 {
-		ui.Row(c).Gap(12).Margin(0, 8, 0, 0).FontFeatures("tnum").TextColor(t.TextMuted).Children(func() {
-			ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
-				ui.Icon(c, icon("download")).FontSize(14).TextColor(t.Accent)
-				ui.Text(c, humanSpeed(down)).ContentTransition(ui.ContentTransition{Numeric: true})
-			})
-			ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
-				ui.Icon(c, icon("upload")).FontSize(14).TextColor(t.Success)
-				ui.Text(c, humanSpeed(up)).ContentTransition(ui.ContentTransition{Numeric: true})
-			})
-		})
-	}
 	stopped := 0
 	for _, task := range a.transfers.tasks {
 		if task.State == transfer.Paused || task.State == transfer.Failed {
@@ -306,10 +367,10 @@ func (a *App) transfersToolbar(c *ui.Context, t *ui.Theme, p *palette) {
 		}
 	}
 	if a.activeTransfers() > 0 {
-		if pill(c, t, p, "pause", "全部暂停", false).Clicked() {
+		if pill(c, t, p, "", "全部暂停", false).Clicked() {
 			m.PauseAll()
 		}
-	} else if stopped > 0 && pill(c, t, p, "play", "全部开始", false).Clicked() {
+	} else if stopped > 0 && pill(c, t, p, "", "全部开始", false).Clicked() {
 		m.ResumeAll()
 	}
 	if a.transfers.tab == 1 && iconButton(c, t, p, "trash-2", "清除已完成").Clicked() {
@@ -322,32 +383,27 @@ func (a *App) transfersToolbar(c *ui.Context, t *ui.Theme, p *palette) {
 	}
 }
 
-// tabs is a segmented control of labels whose thumb glides to the one
-// chosen.
+// tabs is an outlined segmented control of labels, the chosen one filled
+// with the line color.
 func tabs(c *ui.Context, t *ui.Theme, p *palette, chosen *int, labels ...string) ui.Element {
 	seg := ui.SegmentedBase(c, chosen, len(labels))
-	seg.Track.Height(34).Padding(3).Radius(10).Background(t.Surface)
-	x := seg.Track.AnimateTo("thumb", float32(*chosen), springSoft)
-	thumb, shadow := p.Card, p.Shadow
-	if t.Dark {
-		thumb = t.SurfacePressed
-	}
+	seg.Track.Height(28).Radius(5).Border(1, p.Hairline).Clip()
+	x := seg.Track.AnimateTo("thumb", float32(*chosen), motionPanel)
+	thumb := p.Hairline
 	seg.Track.Draw(func(pt *ui.Painter, r ui.Rect) {
-		w := (r.W - 6) / float32(len(labels))
-		th := ui.Rect{X: r.X + 3 + x*w, Y: r.Y + 3, W: w, H: r.H - 6}
-		pt.Shadow(th, 7, 0, 1, 3, 0, shadow)
-		pt.Fill(th, thumb, 7)
+		w := (r.W - 2) / float32(len(labels))
+		pt.Fill(ui.Rect{X: r.X + 1 + x*w, Y: r.Y + 1, W: w, H: r.H - 2}, thumb, 0)
 	})
 	seg.Track.Children(func() {
 		for i, label := range labels {
-			s := seg.Segment(i).MinWidth(96).Grow(1).Basis(0).PaddingX(12).Center().Label(label)
+			s := seg.Segment(i).MinWidth(84).Grow(1).Basis(0).PaddingX(12).Center().Label(label)
 			color := t.TextMuted
 			if i == *chosen {
 				color = t.Text
 			}
-			s.TextColor(s.AnimateColor("fg", color, fadeQuick))
+			s.TextColor(s.AnimateColor("fg", color, motionHover))
 			s.Children(func() {
-				ui.Text(c, label).FontWeight(560).SingleLine().FontFeatures("tnum").ContentTransition(ui.ContentTransition{Numeric: true})
+				ui.Text(c, label).FontWeight(500).SingleLine().FontFeatures("tnum").ContentTransition(ui.ContentTransition{Numeric: true})
 			})
 		}
 	})

@@ -23,9 +23,9 @@ func (a *App) toasts(c *ui.Context, t *ui.Theme, p *palette) {
 		viewport.Padding(20).AlignItems(ui.Center).Gap(8)
 		for _, tt := range toasts {
 			toast := ui.ToastBase(c, tt)
-			toast.Root.Row().Gap(10).Padding(10, 12, 10, 16).Radius(14).AlignItems(ui.Center).MaxWidth(520).
+			toast.Root.Row().Gap(10).Padding(8, 10, 8, 14).Radius(8).AlignItems(ui.Center).MaxWidth(520).
 				Background(p.Card).Border(1, p.Hairline).Shadow(0, 14, 36, -10, p.Shadow).
-				Transition(ui.ElementTransition{Animation: &springPop, Enter: &ui.Motion{Y: 18, Scale: 0.96}, Exit: &ui.Motion{Y: 8, Opacity: 0}})
+				Transition(ui.ElementTransition{Animation: &motionFade, Enter: &ui.Motion{Y: 8, Opacity: 0}, Exit: &ui.Motion{Opacity: 0}})
 			toast.Root.Children(func() {
 				ic, color := "info", t.Accent
 				switch tt.Type {
@@ -36,16 +36,16 @@ func (a *App) toasts(c *ui.Context, t *ui.Theme, p *palette) {
 				}
 				ui.Icon(c, icon(ic)).FontSize(17).TextColor(color)
 				ui.Column(c).Shrink(1).Gap(2).Children(func() {
-					ui.Text(c, tt.Title).FontWeight(560)
+					ui.Text(c, tt.Title).FontWeight(500)
 					if tt.Description != "" {
 						ui.Text(c, tt.Description).FontSize(t.Rem(0.86)).TextColor(t.TextMuted)
 					}
 				})
 				if tt.Action != "" {
-					toast.ActionButton().Padding(5, 10).Radius(8).Background(p.AccentSoft).TextColor(t.Accent).
-						Children(func() { ui.Text(c, tt.Action).FontWeight(600) })
+					toast.ActionButton().Padding(4, 10).Radius(5).Border(1, p.Hairline).TextColor(t.Accent).
+						Children(func() { ui.Text(c, tt.Action).FontWeight(500) })
 				}
-				close := toast.CloseButton().Label("关闭").Size(24, 24).Radius(12).Center().TextColor(t.TextMuted)
+				close := toast.CloseButton().Label("关闭").Size(24, 24).Radius(5).Center().TextColor(t.TextMuted)
 				if close.Hovered() {
 					close.Background(p.Hover)
 				}

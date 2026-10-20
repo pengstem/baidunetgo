@@ -2,10 +2,8 @@ package app
 
 import (
 	"context"
-	"math"
 	"time"
 
-	"github.com/egoist/mygo/plugins/glass"
 	"github.com/egoist/mygo/ui"
 
 	"github.com/pengstem/baidunetgo/internal/baidu"
@@ -112,7 +110,9 @@ func (a *App) startQR() {
 	}()
 }
 
-// loginView is the sign-in screen.
+// loginView is the sign-in screen: the QR code, and links to the other
+// ways in. It shows only without a saved session or BaiduPCS-Go's account,
+// or after signing out.
 func (a *App) loginView(c *ui.Context, t *ui.Theme, p *palette) {
 	l := &a.login
 	if l.tab == 0 && l.qr == nil && !l.qrLoading && l.qrErr == "" {
@@ -126,134 +126,86 @@ func (a *App) loginView(c *ui.Context, t *ui.Theme, p *palette) {
 	bar := c.TitleBar()
 	root := ui.Box(c).Fill().Background(t.Background).Clip()
 	root.Children(func() {
-		a.aurora(c, t)
 		// The top drags the window.
 		ui.Box(c).Absolute().Top(0).Left(0).Right(0).Height(max(bar.Height, titleBarMin)).DragWindow()
 
 		ui.Column(c).Absolute().Top(0).Left(0).Right(0).Bottom(0).Center().Children(func() {
-			card := ui.Column(c).Key("login-card").Width(392).Padding(34, 34, 28).Gap(22).Radius(22).
-				Material(glass.Glass{}).
-				Shadow(0, 24, 60, -12, p.Shadow).Shadow(0, 2, 6, 0, p.Shadow.Alpha(0.06)).
-				AlignItems(ui.Center).Transition(ui.ElementTransition{
-				Animation: &springPanel, Size: true,
-				Enter: &ui.Motion{Scale: 0.92, Y: 16},
-				Exit:  &ui.Motion{Scale: 1.04},
-			})
-			card.Children(func() {
-				ui.Column(c).Gap(6).AlignItems(ui.Center).Children(func() {
-					logo := ui.Box(c).Size(52, 52).Radius(15).Center().Margin(0, 0, 8).
-						LinearGradient(ui.LinearGradient{
-							Stops: []ui.GradientStop{{Color: ui.Oklch(0.7, 0.16, 245), At: 0}, {Color: ui.Oklch(0.56, 0.22, 288), At: 1}},
-							Angle: 135, Oklab: true,
-						}).Shadow(0, 8, 20, -6, ui.Oklch(0.55, 0.2, 270).Alpha(0.6))
-					logo.Children(func() {
-						ui.Icon(c, icon("hard-drive")).FontSize(26).TextColor(ui.Hex("#ffffff"))
+			ui.Column(c).Key("login").Width(324).Gap(20).AlignItems(ui.Center).Transition(popIn).Children(func() {
+				ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
+					logoMark(c, t, p, 22)
+					ui.Text(c, "登录百度网盘").FontSize(17).FontWeight(600)
+				})
+				if l.tab == 0 {
+					ui.Column(c).Key("qr").AlignItems(ui.Center).Gap(14).Transition(popIn).Children(func() {
+						a.qrPanel(c, t, p)
 					})
-					ui.Text(c, "登录百度网盘").FontSize(21).FontWeight(650)
-					ui.Text(c, "你的文件，优雅地呈现").TextColor(t.TextMuted)
-				})
-				a.pcsImport(c, t, p)
-				a.loginTabs(c, t, p)
-				ui.Box(c).Width(324).Children(func() {
-					if l.tab == 0 {
-						ui.Column(c).Key("qr").AlignItems(ui.Center).Gap(14).Transition(popIn).Children(func() {
-							a.qrPanel(c, t, p)
-						})
-					} else {
-						ui.Column(c).Key("cookie").Gap(12).Transition(popIn).Children(func() {
-							a.cookiePanel(c, t, p)
-						})
-					}
-				})
+				} else {
+					ui.Column(c).Key("cookie").Width(324).Gap(12).Transition(popIn).Children(func() {
+						a.cookiePanel(c, t, p)
+					})
+				}
+				a.loginLinks(c, t, p)
 			})
 		})
 	})
 }
 
-// aurora draws soft colored lights drifting behind the sign-in card.
-func (a *App) aurora(c *ui.Context, t *ui.Theme) {
-	alpha := float32(0.55)
-	if t.Dark {
-		alpha = 0.35
-	}
-	blobs := []struct {
-		color      ui.Color
-		x, y, size float32
-		period     time.Duration
-	}{
-		{ui.Oklch(0.72, 0.15, 250), -0.22, -0.18, 520, 23 * time.Second},
-		{ui.Oklch(0.7, 0.17, 300), 0.25, 0.22, 460, 29 * time.Second},
-		{ui.Oklch(0.8, 0.12, 190), 0.3, -0.25, 380, 19 * time.Second},
-	}
-	w, h := c.Size()
-	for i, b := range blobs {
-		blob := ui.Box(c).Absolute().Size(b.size, b.size).Radius(b.size / 2).
-			Background(b.color.Alpha(alpha)).Blur(90).PassThrough()
-		phase := blob.Loop("drift", b.period, ui.Linear) * 2 * math.Pi
-		dx := float32(math.Sin(float64(phase)+float64(i))) * 60
-		dy := float32(math.Cos(float64(phase)*0.8+float64(i))) * 40
-		blob.Left(w/2 + b.x*w - b.size/2 + dx).Top(h/2 + b.y*h - b.size/2 + dy)
-	}
-}
-
-func (a *App) loginTabs(c *ui.Context, t *ui.Theme, p *palette) {
+// loginLinks are the other ways in, as quiet links on one line.
+func (a *App) loginLinks(c *ui.Context, t *ui.Theme, p *palette) {
 	l := &a.login
-	labels := []struct{ icon, text string }{{"qr-code", "扫码登录"}, {"cookie", "Cookie 登录"}}
-	seg := ui.SegmentedBase(c, &l.tab, len(labels))
-	seg.Track.Width(324).Height(38).Padding(3).Radius(11).Background(t.Surface).Label("登录方式")
-	// The thumb slides under the segment chosen, painted below the labels.
-	x := seg.Track.AnimateTo("thumb", float32(l.tab), springSoft)
-	card, shadow := p.Card, p.Shadow
-	if t.Dark {
-		card = t.SurfacePressed
+	if !l.pcsChecked && !a.fake {
+		l.pcsChecked = true
+		l.pcs, _ = pcsimport.Find()
 	}
-	seg.Track.Draw(func(pt *ui.Painter, r ui.Rect) {
-		w := (r.W - 6) / float32(len(labels))
-		th := ui.Rect{X: r.X + 3 + x*w, Y: r.Y + 3, W: w, H: r.H - 6}
-		pt.Shadow(th, 8, 0, 1, 3, 0, shadow)
-		pt.Fill(th, card, 8)
-	})
-	seg.Track.Children(func() {
-		for i, lb := range labels {
-			s := seg.Segment(i).Grow(1).Basis(0).Center().Gap(7).Label(lb.text)
-			color := t.TextMuted
-			if i == l.tab {
-				color = t.Text
+	link := func(label string) bool {
+		b := ui.ButtonBase(c).Label(label).Height(24).PaddingX(4).Radius(3).TextColor(t.Accent).Disabled(l.busy)
+		if b.Hovered() {
+			b.TextColor(t.AccentHover)
+		}
+		b.Children(func() { ui.Text(c, label).FontSize(12) })
+		return b.Clicked()
+	}
+	ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
+		if l.pcs != nil {
+			if link("用 BaiduPCS-Go 的账号（" + l.pcs.Name + "）") {
+				l.busy, l.err = true, ""
+				cr := l.pcs.Creds
+				go a.signIn(cr, true)
 			}
-			s.TextColor(s.AnimateColor("fg", color, fadeQuick))
-			s.Children(func() {
-				ui.Icon(c, icon(lb.icon)).FontSize(15)
-				ui.Text(c, lb.text).FontWeight(560).SingleLine()
-			})
+			ui.Text(c, "|").TextColor(p.Hairline)
+		}
+		other := []string{"Cookie 登录", "扫码登录"}[l.tab]
+		if link(other) {
+			l.tab = 1 - l.tab
+			l.err = ""
 		}
 	})
 }
 
 func (a *App) qrPanel(c *ui.Context, t *ui.Theme, p *palette) {
 	l := &a.login
-	frame := ui.Box(c).Size(212, 212).Radius(18).Padding(12).Background(ui.Hex("#ffffff")).
-		Border(1, p.Hairline).Shadow(0, 8, 24, -10, p.Shadow).Clip()
+	frame := ui.Box(c).Size(184, 184).Radius(5).Padding(10).Background(ui.Hex("#ffffff")).Clip()
 	frame.Children(func() {
 		switch {
 		case l.qr != nil:
 			img := ui.Image(c, l.qr).Fill().Fit(ui.Contain)
 			veiled := l.qrState == baidu.QRScanned || l.qrState == baidu.QRExpired || l.busy
-			img.Opacity(img.AnimateTo("veil", map[bool]float32{true: 0.12, false: 1}[veiled], fadeQuick))
-			img.Transition(ui.ElementTransition{Enter: &ui.Motion{Scale: 0.9}, Animation: &springPop})
+			img.Opacity(img.AnimateTo("veil", map[bool]float32{true: 0.12, false: 1}[veiled], motionHover))
+			img.Transition(ui.ElementTransition{Enter: &ui.Motion{Opacity: 0}, Animation: &motionFade})
 		case l.qrErr == "":
-			ui.Box(c).Fill().Center().Children(func() { ui.Spinner(c).Size(28, 28).Label("加载二维码") })
+			ui.Box(c).Fill().Center().Children(func() { ui.Spinner(c).Size(24, 24).Label("加载二维码").TextColor(ui.Hex("#5e5e58")) })
 		}
 		a.qrOverlay(c, t, p)
 	})
 
-	hint := "打开百度网盘 App，扫一扫登录"
+	hint := "百度网盘 App 扫码"
 	switch {
 	case l.busy:
 		hint = "正在登录…"
 	case l.qrErr != "":
 		hint = l.qrErr
 	case l.qrState == baidu.QRScanned:
-		hint = "已扫描，请在手机上确认"
+		hint = "已扫描，在手机上确认"
 	case l.qrState == baidu.QRExpired:
 		hint = "二维码已过期"
 	}
@@ -268,12 +220,12 @@ func (a *App) qrPanel(c *ui.Context, t *ui.Theme, p *palette) {
 func (a *App) qrOverlay(c *ui.Context, t *ui.Theme, p *palette) {
 	l := &a.login
 	var ic, label string
-	color := t.Success
+	color := lightTheme.Success
 	switch {
 	case l.busy:
 		ic, label = "loader-circle", "登录中"
 	case l.qrErr != "" || l.qrState == baidu.QRExpired:
-		ic, label, color = "refresh-cw", "刷新二维码", t.Accent
+		ic, label = "refresh-cw", "刷新二维码"
 	case l.qrState == baidu.QRScanned:
 		ic, label = "circle-check", "已扫描"
 	default:
@@ -282,52 +234,41 @@ func (a *App) qrOverlay(c *ui.Context, t *ui.Theme, p *palette) {
 	ui.Column(c).Key(label).Absolute().Top(0).Left(0).Right(0).Bottom(0).Center().Gap(8).
 		Transition(popIn).Children(func() {
 		if label == "刷新二维码" {
-			btn := ui.ButtonBase(c).Label(label).Padding(8, 14).Radius(999).Gap(6).
-				Background(t.Accent).TextColor(t.AccentText).Shadow(0, 6, 16, -6, t.Accent)
+			btn := ui.ButtonBase(c).Label(label).Height(30).PaddingX(12).Radius(5).Gap(6).AlignItems(ui.Center).
+				Background(lightTheme.Accent).TextColor(lightTheme.AccentText)
 			if btn.Hovered() {
-				btn.AnimatePose(ui.Pose{Scale: 1.04}, springPop)
-			} else {
-				btn.AnimatePose(ui.Pose{}, springPop)
+				btn.Background(lightTheme.AccentHover)
 			}
 			btn.Children(func() {
-				ui.Icon(c, icon(ic)).FontSize(15)
-				ui.Text(c, label).FontWeight(600)
+				ui.Icon(c, icon(ic)).FontSize(14)
+				ui.Text(c, label).FontWeight(500)
 			})
 			if btn.Clicked() {
 				a.startQR()
 			}
 			return
 		}
-		badge := ui.Box(c).Size(52, 52).Radius(26).Center().Background(color).TextColor(ui.Hex("#ffffff")).
-			Shadow(0, 8, 20, -6, color)
-		badge.Children(func() {
-			i := ui.Icon(c, icon(ic)).FontSize(26)
-			if ic == "loader-circle" {
-				i.Rotate(i.Loop("spin", 900*time.Millisecond, ui.Linear) * 360)
-			}
-		})
-		ui.Text(c, label).FontWeight(600).TextColor(ui.Hex("#16171b"))
+		i := ui.Icon(c, icon(ic)).FontSize(28).TextColor(color)
+		if ic == "loader-circle" {
+			i.Rotate(i.Loop("spin", 900*time.Millisecond, ui.Linear) * 360)
+		}
+		ui.Text(c, label).FontWeight(500).TextColor(lightTheme.Text)
 	})
 }
 
 func (a *App) cookiePanel(c *ui.Context, t *ui.Theme, p *palette) {
 	l := &a.login
-	ui.Text(c, "粘贴浏览器中 pan.baidu.com 的 Cookie，或 BDUSS 与 STOKEN").TextColor(t.TextMuted).FontSize(t.Rem(0.92))
-	in := ui.TextArea(c, &l.cookie).Placeholder("BDUSS=…; STOKEN=…").Lines(4, 6).Font("monospace").
+	ui.Text(c, "粘贴 pan.baidu.com 的 Cookie，或 BDUSS 与 STOKEN").TextColor(t.TextMuted)
+	in := ui.TextArea(c, &l.cookie).Placeholder("BDUSS=…; STOKEN=…").Lines(4, 6).Font(fontMono).
 		FontSize(12).Label("Cookie")
 	if l.err != "" {
 		in.Error(l.err)
 		ui.Text(c, l.err).TextColor(t.Danger).Transition(rowEnter)
 	}
-	btn := ui.PrimaryButton(c, "").Height(40).Radius(11).Disabled(l.busy || l.cookie == "")
-	btn.Children(func() {
-		if l.busy {
-			ui.Spinner(c).TextColor(t.AccentText)
-			ui.Text(c, "正在登录…").FontWeight(600)
-		} else {
-			ui.Text(c, "登录").FontWeight(600)
-		}
-	})
+	btn := pill(c, t, p, "", "登录", true).Disabled(l.busy || l.cookie == "")
+	if l.busy {
+		btn.Children(func() { ui.Spinner(c).TextColor(t.AccentText) })
+	}
 	if btn.Clicked() {
 		cr, err := baidu.ParseCredentials(l.cookie)
 		if err != nil {
@@ -337,39 +278,5 @@ func (a *App) cookiePanel(c *ui.Context, t *ui.Theme, p *palette) {
 		l.err, l.busy = "", true
 		go a.signIn(cr, true)
 	}
-	ui.Text(c, "凭据只加密保存在本机，密钥存放于系统钥匙串。").TextColor(t.TextMuted).FontSize(t.Rem(0.82))
-}
-
-// pcsImport offers to sign in with the account BaiduPCS-Go uses.
-func (a *App) pcsImport(c *ui.Context, t *ui.Theme, p *palette) {
-	l := &a.login
-	if !l.pcsChecked && !a.fake {
-		l.pcsChecked = true
-		l.pcs, _ = pcsimport.Find()
-	}
-	if l.pcs == nil {
-		return
-	}
-	b := ui.ButtonBase(c).Label("使用 BaiduPCS-Go 的账号").Width(324).Padding(10, 14).Gap(12).Radius(12).
-		AlignItems(ui.Center).Justify(ui.Start).Background(p.AccentSoft).Disabled(l.busy).Transition(rowEnter)
-	if b.Hovered() {
-		b.AnimatePose(ui.Pose{Y: -1}, springPop)
-	} else {
-		b.AnimatePose(ui.Pose{}, springPop)
-	}
-	b.Children(func() {
-		ui.Box(c).Size(30, 30).Radius(9).Center().Background(t.Accent).TextColor(t.AccentText).Children(func() {
-			ui.Icon(c, icon("user")).FontSize(16)
-		})
-		ui.Column(c).Grow(1).Gap(1).Children(func() {
-			ui.Text(c, "使用 BaiduPCS-Go 的登录").FontWeight(600)
-			ui.Text(c, l.pcs.Name).FontSize(t.Rem(0.84)).TextColor(t.TextMuted).SingleLine()
-		})
-		ui.Icon(c, icon("chevron-right")).FontSize(15).TextColor(t.Accent)
-	})
-	if b.Clicked() {
-		l.busy, l.err = true, ""
-		cr := l.pcs.Creds
-		go a.signIn(cr, true)
-	}
+	ui.Text(c, "加密保存在本机，密钥在系统钥匙串").TextColor(p.Faint).FontSize(12)
 }

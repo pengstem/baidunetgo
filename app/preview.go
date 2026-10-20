@@ -11,7 +11,6 @@ import (
 	"github.com/egoist/mygo/audio"
 	_ "github.com/egoist/mygo/audio/mp3"
 	_ "github.com/egoist/mygo/audio/vorbis"
-	"github.com/egoist/mygo/plugins/glass"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
 	"golang.org/x/text/encoding/simplifiedchinese"
@@ -301,9 +300,9 @@ func (a *App) previewOverlay(c *ui.Context, t *ui.Theme, p *palette) {
 			return
 		}
 		root := ui.Box(c).Key("preview").Absolute().Top(0).Left(0).Right(0).Bottom(0).Modal().
-			Transition(ui.ElementTransition{Animation: &fadeQuick, Enter: &ui.Motion{Opacity: 0}, Exit: &ui.Motion{Opacity: 0}})
+			Transition(ui.ElementTransition{Animation: &motionHover, Enter: &ui.Motion{Opacity: 0}, Exit: &ui.Motion{Opacity: 0}})
 		root.Children(func() {
-			back := ui.Box(c).Absolute().Top(0).Left(0).Right(0).Bottom(0).Material(glass.Blur{Radius: 22})
+			back := ui.Box(c).Absolute().Top(0).Left(0).Right(0).Bottom(0)
 			back.Children(func() {
 				ui.Box(c).Fill().Background(previewScrim(t)).PassThrough()
 			})
@@ -339,24 +338,22 @@ func (a *App) previewOverlay(c *ui.Context, t *ui.Theme, p *palette) {
 
 func previewScrim(t *ui.Theme) ui.Color {
 	if t.Dark {
-		return ui.RGBA(6, 7, 10, 0.86)
+		return ui.RGBA(8, 8, 7, 0.92)
 	}
-	return ui.RGBA(18, 20, 28, 0.78)
+	return ui.RGBA(20, 20, 18, 0.86)
 }
 
 // previewBar is the file's name and actions above it.
 func (a *App) previewBar(c *ui.Context, t *ui.Theme, p *palette, pv *previewState) {
 	bar := c.TitleBar()
-	white := ui.Hex("#f4f5f8")
-	ui.Row(c).Height(max(bar.Height, titleBarMin) + 8).PaddingStart(max(bar.Left, 0) + 20).PaddingEnd(bar.Right + 16).
+	white := ui.Hex("#ecece8")
+	ui.Row(c).Height(max(bar.Height, titleBarMin) + 8).PaddingStart(max(bar.Left, 0) + 20).PaddingEnd(controlsRoom(bar) + 8).
 		Gap(12).AlignItems(ui.Center).TextColor(white).DragWindow().
-		Transition(ui.ElementTransition{Animation: &springSoft, Enter: &ui.Motion{Y: -12, Opacity: 0}}).Children(func() {
+		Transition(ui.ElementTransition{Animation: &motionPanel, Enter: &ui.Motion{Y: -12, Opacity: 0}}).Children(func() {
 		lk := pv.kind.look(p)
-		ui.Box(c).Size(30, 30).Radius(8).Center().Background(lk.color.Alpha(0.25)).Children(func() {
-			ui.Icon(c, icon(lk.icon)).FontSize(16).TextColor(lk.color)
-		})
+		ui.Icon(c, icon(lk.icon)).FontSize(18).TextColor(ui.RGBA(236, 236, 232, 0.6))
 		ui.Column(c).Gap(1).Shrink(1).Children(func() {
-			ui.Text(c, pv.file.Name).FontWeight(600).SingleLine()
+			ui.Text(c, pv.file.Name).FontWeight(500).SingleLine()
 			meta := lk.label + " · " + humanSize(pv.file.Size)
 			if pv.doc != nil {
 				first, _ := pv.pageList.Visible()
@@ -413,15 +410,15 @@ func (a *App) previewBar(c *ui.Context, t *ui.Theme, p *palette, pv *previewStat
 
 // glassButton is a round icon button over the dark preview backdrop.
 func glassButton(c *ui.Context, ic, label string) ui.Element {
-	b := ui.ButtonBase(c).Label(label).Tooltip(label).Size(34, 34).Radius(17).Center().
-		TextColor(ui.Hex("#f4f5f8"))
+	b := ui.ButtonBase(c).Label(label).Tooltip(label).Size(32, 32).Radius(5).Center().
+		TextColor(ui.Hex("#ecece8"))
 	bg := ui.RGBA(255, 255, 255, 0.08)
 	if b.Pressed() {
 		bg = ui.RGBA(255, 255, 255, 0.22)
 	} else if b.Hovered() {
 		bg = ui.RGBA(255, 255, 255, 0.15)
 	}
-	b.Background(b.AnimateColor("bg", bg, fadeQuick))
+	b.Background(b.AnimateColor("bg", bg, motionHover))
 	b.Children(func() { ui.Icon(c, icon(ic)).FontSize(16) })
 	return b
 }
@@ -454,7 +451,7 @@ func (a *App) previewLoading(c *ui.Context, t *ui.Theme, p *palette, pv *preview
 		track := ui.Box(c).FillWidth().Height(4).Radius(2).Background(ui.RGBA(255, 255, 255, 0.12)).Clip()
 		track.Children(func() {
 			bar := ui.Box(c).Height(4).Radius(2).Background(t.Accent)
-			bar.WidthPercent(bar.AnimateTo("p", pv.progress*100, springSoft))
+			bar.WidthPercent(bar.AnimateTo("p", pv.progress*100, motionPanel))
 		})
 		ui.Text(c, "正在载入到内存 · "+humanSize(int64(float64(pv.progress)*float64(pv.file.Size)))+" / "+humanSize(pv.file.Size)).
 			FontSize(t.Rem(0.86)).TextColor(ui.RGBA(244, 245, 248, 0.6)).FontFeatures("tnum")
@@ -462,13 +459,10 @@ func (a *App) previewLoading(c *ui.Context, t *ui.Theme, p *palette, pv *preview
 }
 
 func (a *App) previewMessage(c *ui.Context, t *ui.Theme, p *palette, pv *previewState, ic, msg string) {
-	ui.Column(c).Width(360).Padding(28).Gap(14).Radius(20).AlignItems(ui.Center).Background(p.Card).
-		Shadow(0, 24, 60, -12, ui.RGBA(0, 0, 0, 0.5)).Transition(popIn).Children(func() {
-		lk := pv.kind.look(p)
-		ui.Box(c).Size(64, 64).Radius(18).Center().Background(lk.color.Alpha(0.14)).Children(func() {
-			ui.Icon(c, icon(ic)).FontSize(30).TextColor(lk.color)
-		})
-		ui.Text(c, pv.file.Name).FontWeight(600).TextAlign(ui.Center).MaxLines(2)
+	ui.Column(c).Width(360).Padding(24).Gap(12).Radius(8).AlignItems(ui.Center).Background(p.Card).
+		Border(1, p.Hairline).Shadow(0, 16, 40, -12, ui.RGBA(0, 0, 0, 0.45)).Transition(popIn).Children(func() {
+		ui.Icon(c, icon(ic)).FontSize(28).TextColor(p.Faint)
+		ui.Text(c, pv.file.Name).FontWeight(500).TextAlign(ui.Center).MaxLines(2)
 		ui.Text(c, msg).TextColor(t.TextMuted).TextAlign(ui.Center)
 		ui.Row(c).Gap(8).Margin(6, 0, 0).Children(func() {
 			if pill(c, t, p, "download", "下载到本地", true).Clicked() {
@@ -526,11 +520,11 @@ func (a *App) imageViewer(c *ui.Context, t *ui.Theme, p *palette, pv *previewSta
 			scale = min(availW/float32(iw), availH/float32(ih))
 		}
 		w, h := float32(iw)*scale, float32(ih)*scale
-		z := box.AnimateTo("zoom", pv.zoom, springSoft)
-		img := ui.Image(c, src).Size(w*z, h*z).Fit(ui.Contain).Radius(10).
+		z := box.AnimateTo("zoom", pv.zoom, motionPanel)
+		img := ui.Image(c, src).Size(w*z, h*z).Fit(ui.Contain).Radius(3).
 			Shadow(0, 30, 80, -20, ui.RGBA(0, 0, 0, 0.6)).
 			ContentTransition(ui.ContentTransition{}).
-			Transition(ui.ElementTransition{Match: thumbMatch{pv.file.FsID}, Animation: &springPanel})
+			Transition(ui.ElementTransition{Match: thumbMatch{pv.file.FsID}, Animation: &motionPanel})
 		if pv.zoom > 1 {
 			img.Draggable(&pv.pan, ui.DraggableOptions{
 				Bounds: &ui.Rect{X: -w * z / 2, Y: -h * z / 2, W: w * z, H: h * z},
@@ -561,14 +555,14 @@ func (a *App) imageViewer(c *ui.Context, t *ui.Theme, p *palette, pv *previewSta
 		if pv.loading && pv.thumb != nil {
 			ui.Box(c).Absolute().Bottom(0).Left(0).Right(0).Height(3).Children(func() {
 				bar := ui.Box(c).Height(3).Background(t.Accent)
-				bar.WidthPercent(bar.AnimateTo("p", pv.progress*100, springSoft))
+				bar.WidthPercent(bar.AnimateTo("p", pv.progress*100, motionPanel))
 			})
 		}
 	})
 	if len(pv.group) > 1 && pv.zoom == 1 {
 		for _, side := range []int{-1, 1} {
 			b := glassButton(c.Key(side), map[int]string{-1: "chevron-left", 1: "chevron-right"}[side], map[int]string{-1: "上一张", 1: "下一张"}[side]).
-				Size(44, 44).Radius(22).Absolute().Top(0).Bottom(0).Margin(ui.Auto, 0)
+				Size(36, 36).Radius(5).Absolute().Top(0).Bottom(0).Margin(ui.Auto, 0)
 			if side < 0 {
 				b.Left(8)
 			} else {
@@ -584,9 +578,9 @@ func (a *App) imageViewer(c *ui.Context, t *ui.Theme, p *palette, pv *previewSta
 // textViewer shows text and code, read-only with highlighting, and
 // Markdown rendered.
 func (a *App) textViewer(c *ui.Context, t *ui.Theme, p *palette, pv *previewState) {
-	panel := ui.Column(c).Fill().MaxWidth(1040).Radius(16).Background(t.Background).Clip().
-		Border(1, p.Hairline).Shadow(0, 30, 80, -20, ui.RGBA(0, 0, 0, 0.55)).
-		Transition(ui.ElementTransition{Animation: &springPanel, Enter: &ui.Motion{Y: 30, Scale: 0.97, Opacity: 0}})
+	panel := ui.Column(c).Fill().MaxWidth(1040).Radius(8).Background(t.Background).Clip().
+		Border(1, p.Hairline).Shadow(0, 16, 40, -12, ui.RGBA(0, 0, 0, 0.45)).
+		Transition(ui.ElementTransition{Animation: &motionPanel, Enter: &ui.Motion{Y: 8, Opacity: 0}})
 	panel.Children(func() {
 		if pv.kind == kindMarkdown && !pv.source {
 			ui.Scroll(c).Key("md").Grow(1).Padding(28, 40, 40).Children(func() {
@@ -615,7 +609,7 @@ func (a *App) pdfViewer(c *ui.Context, t *ui.Theme, p *palette, pv *previewState
 				Shadow(0, 12, 40, -12, ui.RGBA(0, 0, 0, 0.5))
 			page.Children(func() {
 				if bmp := pv.pages[i]; bmp != nil {
-					ui.Image(c, bmp).Fill().Fit(ui.Contain).Transition(ui.ElementTransition{Enter: &ui.Motion{Opacity: 0}, Animation: &fadeQuick})
+					ui.Image(c, bmp).Fill().Fit(ui.Contain).Transition(ui.ElementTransition{Enter: &ui.Motion{Opacity: 0}, Animation: &motionHover})
 				} else {
 					ui.Spinner(c).Label("渲染中")
 					a.renderPage(pv, i, pixels)
@@ -653,23 +647,10 @@ func (a *App) audioPlayer(c *ui.Context, t *ui.Theme, p *palette, pv *previewSta
 	if playing {
 		c.After(250 * time.Millisecond)
 	}
-	ui.Column(c).Width(400).Padding(28).Gap(18).Radius(24).AlignItems(ui.Center).Background(p.Card).
-		Shadow(0, 30, 80, -20, ui.RGBA(0, 0, 0, 0.55)).Transition(popIn).Children(func() {
-		disc := ui.Box(c).Size(168, 168).Radius(84).Center().
-			ConicGradient(ui.ConicGradient{Stops: []ui.GradientStop{
-				{Color: ui.Oklch(0.7, 0.16, 300), At: 0}, {Color: ui.Oklch(0.72, 0.14, 230), At: 0.5}, {Color: ui.Oklch(0.7, 0.16, 300), At: 1},
-			}, Oklab: true}).Shadow(0, 18, 40, -12, ui.Oklch(0.6, 0.18, 280).Alpha(0.6))
-		spin := disc.Loop("spin", 12*time.Second, ui.Linear)
-		if playing {
-			disc.Rotate(spin * 360)
-		}
-		disc.AnimatePose(ui.Pose{Scale: map[bool]float32{true: 1, false: 0.94}[playing]}, springPop)
-		disc.Children(func() {
-			ui.Box(c).Size(44, 44).Radius(22).Background(p.Card).Center().Children(func() {
-				ui.Icon(c, icon("music")).FontSize(18).TextColor(t.TextMuted)
-			})
-		})
-		ui.Text(c, strings.TrimSuffix(pv.file.Name, path.Ext(pv.file.Name))).FontSize(17).FontWeight(650).TextAlign(ui.Center).MaxLines(2)
+	ui.Column(c).Width(400).Padding(24).Gap(16).Radius(8).AlignItems(ui.Center).Background(p.Card).
+		Border(1, p.Hairline).Shadow(0, 16, 40, -12, ui.RGBA(0, 0, 0, 0.45)).Transition(popIn).Children(func() {
+		ui.Icon(c, icon("music")).FontSize(28).TextColor(p.Faint).Margin(8, 0, 0)
+		ui.Text(c, strings.TrimSuffix(pv.file.Name, path.Ext(pv.file.Name))).FontSize(15).FontWeight(600).TextAlign(ui.Center).MaxLines(2)
 		pos, dur := pl.Position(), pl.Duration()
 		frac := float64(0)
 		if dur > 0 {
@@ -680,15 +661,14 @@ func (a *App) audioPlayer(c *ui.Context, t *ui.Theme, p *palette, pv *previewSta
 			pl.Seek(time.Duration(seek * float64(dur)))
 		}
 		ui.Row(c).FillWidth().Children(func() {
-			ui.Text(c, clock(pos)).FontSize(t.Rem(0.82)).TextColor(t.TextMuted).FontFeatures("tnum")
+			figure(c, clock(pos)).FontSize(12).TextColor(t.TextMuted)
 			ui.Spacer(c)
-			ui.Text(c, clock(dur)).FontSize(t.Rem(0.82)).TextColor(t.TextMuted).FontFeatures("tnum")
+			figure(c, clock(dur)).FontSize(12).TextColor(t.TextMuted)
 		})
-		btn := ui.ButtonBase(c).Label(map[bool]string{true: "暂停", false: "播放"}[playing]).Size(56, 56).Radius(28).Center().
-			Background(t.Accent).TextColor(t.AccentText).Shadow(0, 10, 24, -8, t.Accent)
-		btn.AnimatePose(ui.Pose{Scale: map[bool]float32{true: 0.94, false: 1}[btn.Pressed()]}, springPop)
+		btn := ui.ButtonBase(c).Label(map[bool]string{true: "暂停", false: "播放"}[playing]).Size(44, 44).Radius(22).Center().TextColor(t.AccentText)
+		btn.Background(map[bool]ui.Color{true: t.AccentPressed, false: t.Accent}[btn.Pressed()])
 		btn.Children(func() {
-			ui.Icon(c, icon(map[bool]string{true: "pause", false: "play"}[playing])).FontSize(22).
+			ui.Icon(c, icon(map[bool]string{true: "pause", false: "play"}[playing])).FontSize(18).
 				ContentTransition(ui.ContentTransition{})
 		})
 		if btn.Clicked() || c.Shortcut(0, ui.KeySpace) {

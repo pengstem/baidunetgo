@@ -58,16 +58,14 @@ func (a *App) shareDialog(c *ui.Context, t *ui.Theme, p *palette) {
 	if f.created {
 		ui.Column(c).Key("made").Gap(16).Transition(popIn).Children(func() {
 			ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
-				ui.Box(c).Size(40, 40).Radius(12).Center().Background(t.Success.Alpha(0.14)).Children(func() {
-					ui.Icon(c, icon("circle-check")).FontSize(20).TextColor(t.Success)
-				})
+				ui.Icon(c, icon("circle-check")).FontSize(18).TextColor(t.Success)
 				dialogTitle(c, t, "分享链接已创建", countLabel(d.files)+" · "+periodLabel(sharePeriods[f.period]))
 			})
-			ui.Column(c).Padding(14).Gap(10).Radius(12).Background(t.Surface).Children(func() {
-				ui.Text(c, f.link).Font("monospace").FontSize(t.Rem(0.9)).Selectable()
+			ui.Column(c).Padding(12).Gap(8).Radius(5).Border(1, p.Hairline).Background(t.Surface).Children(func() {
+				ui.Text(c, f.link).Font(fontMono).FontSize(t.Rem(0.9)).Selectable()
 				ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 					ui.Text(c, "提取码").TextColor(t.TextMuted)
-					ui.Text(c, f.pwd).Font("monospace").FontSize(18).FontWeight(700).LetterSpacing(4).TextColor(t.Accent).Selectable()
+					ui.Text(c, f.pwd).Font(fontMono).FontSize(18).FontWeight(500).LetterSpacing(4).TextColor(t.Accent).Selectable()
 				})
 			})
 			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
@@ -145,12 +143,12 @@ func (a *App) saveLinkDialog(c *ui.Context, t *ui.Theme, p *palette) {
 	ui.TextArea(c, &f.text).Lines(2, 4).AutoFocus().Placeholder("https://pan.baidu.com/s/1… 提取码: abcd").Label("分享链接")
 	link, pwd, ok := baidu.ParseShareLink(f.text)
 	if ok {
-		ui.Row(c).Gap(8).AlignItems(ui.Center).Padding(8, 12).Radius(10).Background(p.AccentSoft).Transition(rowEnter).Children(func() {
+		ui.Row(c).Gap(8).AlignItems(ui.Center).Padding(8, 12).Radius(5).Background(p.Selected).Transition(rowEnter).Children(func() {
 			ui.Icon(c, icon("link")).FontSize(15).TextColor(t.Accent)
 			ui.Text(c, strings.TrimPrefix(link, "https://")).SingleLine().Shrink(1)
 			ui.Spacer(c)
 			if pwd != "" {
-				ui.Text(c, "提取码 "+pwd).FontWeight(600).TextColor(t.Accent)
+				ui.Text(c, "提取码 "+pwd).Font(fontMono).FontWeight(500).TextColor(t.Accent)
 			} else {
 				ui.Text(c, "未识别到提取码").TextColor(t.Warning)
 			}
@@ -218,7 +216,7 @@ func (a *App) sharesPage(c *ui.Context, t *ui.Theme, p *palette) {
 			now := c.Now()
 			ui.List(c, &s.list, len(s.items), func(i int) {
 				it := s.items[i]
-				row := ui.Row(c.Key(it.ID)).Height(rowHeight + 6).PaddingX(12).Gap(12).AlignItems(ui.Center).Radius(10)
+				row := ui.Row(c.Key(it.ID)).Height(rowHeight + 6).PaddingX(12).Gap(12).AlignItems(ui.Center).Radius(5)
 				if row.Hovered() {
 					row.Background(p.Hover)
 				}

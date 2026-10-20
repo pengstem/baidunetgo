@@ -56,6 +56,8 @@ type App struct {
 
 	sidebarCollapsed bool
 	profileOpen      bool
+	navAt            string // the sidebar page shown, to notice a change
+	navRun           uint64 // counts changes, to replay the icon's gesture
 
 	queueMu sync.Mutex
 	queued  []func()
@@ -68,7 +70,7 @@ func New() *App {
 		start = r // for looking at a page from scripts
 	}
 	r := ui.NewRouter(start)
-	r.Animation = &springPanel
+	r.Animation = &motionPanel
 	return &App{router: r, order: baidu.Order{By: "name"}, gridView: os.Getenv("BAIDUNETGO_GRID") != ""}
 }
 
@@ -78,6 +80,7 @@ func (a *App) Attach(win *mygo.Window) {
 	a.store = openStore()
 	a.settings = loadSettings()
 	a.useSettings()
+	go endButtons() // reads the desktop's settings, off the first frame
 	a.boot()
 }
 
@@ -131,7 +134,7 @@ func (a *App) View(c *ui.Context) {
 		a.loginView(c, t, p)
 	default:
 		ui.Box(c).Key("shell").Fill().Transition(ui.ElementTransition{
-			Animation: &springPanel,
+			Animation: &motionPanel,
 			Enter:     &ui.Motion{Scale: 0.97},
 		}).Children(func() { a.shell(c, t, p) })
 		a.dialogs(c, t, p)

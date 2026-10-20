@@ -74,7 +74,7 @@ func (a *App) offlinePage(c *ui.Context, t *ui.Theme, p *palette) {
 		default:
 			ui.List(c, &o.list, len(o.items), func(i int) {
 				it := o.items[i]
-				row := ui.Row(c.Key(it.ID)).Height(66).PaddingX(12).Gap(14).AlignItems(ui.Center).Radius(12)
+				row := ui.Row(c.Key(it.ID)).Height(66).PaddingX(12).Gap(14).AlignItems(ui.Center).Radius(5)
 				if row.Hovered() {
 					row.Background(p.Hover)
 				}
@@ -90,7 +90,7 @@ func (a *App) offlinePage(c *ui.Context, t *ui.Theme, p *palette) {
 							}
 							ui.Box(c).Height(4).Radius(2).Background(p.Hairline).Clip().Children(func() {
 								bar := ui.Box(c).Height(4).Radius(2).Background(t.Accent)
-								bar.WidthPercent(bar.AnimateTo("p", frac*100, springSoft))
+								bar.WidthPercent(bar.AnimateTo("p", frac*100, motionPanel))
 							})
 						}
 						detail := it.StatusText() + " · " + humanSize(it.Size) + " · 保存到 " + dirLabel(it.SavePath)

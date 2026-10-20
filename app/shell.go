@@ -21,10 +21,11 @@ var navItems = []navItem{
 }
 
 const (
-	sidebarWidth     = 228
-	sidebarCollapsed = 68
-	navRowHeight     = 38
-	titleBarMin      = 52
+	sidebarWidth     = 168
+	sidebarCollapsed = 52
+	navRowHeight     = 32
+	navGap           = 2
+	titleBarMin      = 46
 )
 
 // shell is the window around the pages: the sidebar and the title bar.
@@ -78,6 +79,12 @@ func (a *App) section() string {
 }
 
 func (a *App) sidebar(c *ui.Context, t *ui.Theme, p *palette) {
+	if s := a.section(); s != a.navAt {
+		if a.navAt != "" {
+			a.navRun++ // the new page's icon makes its gesture
+		}
+		a.navAt = s
+	}
 	bar := c.TitleBar()
 	w := float32(sidebarWidth)
 	if a.sidebarCollapsed {
@@ -85,53 +92,73 @@ func (a *App) sidebar(c *ui.Context, t *ui.Theme, p *palette) {
 	}
 	side := ui.Column(c).Key("sidebar").Width(w).ClipX().Background(p.Sidebar).
 		BorderWidth(0, 1, 0, 0).BorderColor(p.Hairline).
-		Transition(ui.ElementTransition{Size: true, Animation: &springPanel})
+		Transition(ui.ElementTransition{Size: true, Animation: &motionPanel})
 	side.Children(func() {
 		// The top of the sidebar drags the window, under macOS's traffic
 		// lights where they are.
-		ui.Row(c).Height(max(bar.Height, titleBarMin)).PaddingStart(max(bar.Left, 0) + 18).
+		ui.Row(c).Height(max(bar.Height, titleBarMin)).PaddingStart(max(bar.Left, 0) + 16).
 			AlignItems(ui.Center).Gap(10).DragWindow().Children(func() {
-			logo := ui.Box(c).Size(28, 28).Radius(8).Center().
-				LinearGradient(ui.LinearGradient{
-					Stops: []ui.GradientStop{{Color: ui.Oklch(0.68, 0.17, 250), At: 0}, {Color: ui.Oklch(0.58, 0.21, 285), At: 1}},
-					Angle: 135, Oklab: true,
-				})
-			logo.Children(func() {
-				ui.Icon(c, icon("hard-drive")).FontSize(15).TextColor(ui.Hex("#ffffff"))
-			})
+			logoMark(c, t, p, 20)
 			if !a.sidebarCollapsed {
-				ui.Text(c, "BaiduNetGo").Bold().FontSize(15).SingleLine().
-					Transition(ui.ElementTransition{Enter: &ui.Motion{X: -8}, Exit: &ui.Motion{}, Animation: &springSoft})
+				ui.Text(c, "BaiduNetGo").FontSize(14).FontWeight(600).SingleLine()
 			}
 		})
 
-		ui.Column(c).Padding(6, 10).Children(func() {
+		ui.Column(c).Padding(4, 8).Children(func() {
 			a.nav(c, t, p)
 		})
 		ui.Spacer(c)
-		ui.Column(c).Padding(10).Gap(4).Children(func() {
+		ui.Column(c).Padding(0, 8, 8).Gap(4).Children(func() {
 			a.profile(c, t, p)
-			a.navRow(c, t, p, navItem{"/settings", "settings", "设置"}, a.section() == "/settings")
-			collapse := ui.ButtonBase(c).Label("收起侧栏").Height(navRowHeight).Radius(9).PaddingX(12).Gap(12).Justify(ui.Start).
-				AlignItems(ui.Center).TextColor(t.TextMuted)
-			if collapse.Hovered() {
-				collapse.Background(p.Hover)
-			}
-			collapse.Children(func() {
-				ic := ui.Icon(c, icon("panel-left")).FontSize(17)
-				ic.Rotate(ic.AnimateTo("turn", map[bool]float32{true: 180, false: 0}[a.sidebarCollapsed], springSoft))
+			ui.Row(c).Gap(2).AlignItems(ui.Center).Children(func() {
 				if !a.sidebarCollapsed {
-					ui.Text(c, "收起").SingleLine()
+					a.navRow(c, t, p, navItem{"/settings", "settings", "设置"}, a.section() == "/settings").Grow(1)
+				}
+				collapse := ui.ButtonBase(c).Label("收起侧栏").Tooltip(map[bool]string{true: "展开侧栏", false: "收起侧栏"}[a.sidebarCollapsed]).
+					Size(32, navRowHeight).Radius(5).Center().TextColor(t.TextMuted)
+				if collapse.Hovered() {
+					collapse.Background(p.Hover).TextColor(t.Text)
+				}
+				collapse.Children(func() { ui.Icon(c, icon("panel-left")).FontSize(16) })
+				if collapse.Clicked() {
+					a.sidebarCollapsed = !a.sidebarCollapsed
 				}
 			})
-			if collapse.Clicked() {
-				a.sidebarCollapsed = !a.sidebarCollapsed
+			if a.sidebarCollapsed {
+				a.navRow(c, t, p, navItem{"/settings", "settings", "设置"}, a.section() == "/settings")
 			}
 		})
 	})
 }
 
-// nav builds the sidebar's pages over a pill that glides to the one
+// logoMark is the app's mark: four blocks, the last one fetched, as the
+// downloads fetch theirs.
+func logoMark(c *ui.Context, t *ui.Theme, p *palette, size float32) {
+	cell := size * 0.26
+	gap := size * 0.1
+	ui.Box(c).Size(size, size).Radius(size * 0.2).Background(t.Text).Draw(func(pt *ui.Painter, r ui.Rect) {
+		x0 := r.X + (r.W-2*cell-gap)/2
+		y0 := r.Y + (r.H-2*cell-gap)/2
+		for i := range 4 {
+			color := t.Background
+			if i == 3 {
+				color = t.Accent
+			}
+			x := x0 + float32(i%2)*(cell+gap)
+			y := y0 + float32(i/2)*(cell+gap)
+			pt.Fill(ui.Rect{X: x, Y: y, W: cell, H: cell}, color, size*0.05)
+		}
+	})
+}
+
+// navKey keys a sidebar icon so that a new gesture starts afresh.
+type navKey struct {
+	path string
+	run  uint64
+	on   bool
+}
+
+// nav builds the sidebar's pages over a backdrop that glides to the one
 // chosen.
 func (a *App) nav(c *ui.Context, t *ui.Theme, p *palette) {
 	chosen := -1
@@ -140,33 +167,39 @@ func (a *App) nav(c *ui.Context, t *ui.Theme, p *palette) {
 			chosen = i
 		}
 	}
-	ui.Box(c).Children(func() {
-		pill := ui.Box(c).Absolute().Left(0).Right(0).Top(0).Height(navRowHeight).Radius(9).
-			Background(p.Selected).PassThrough()
-		y := pill.AnimateTo("y", float32(max(chosen, 0))*navRowHeight, springSoft)
-		pill.Translate(0, y)
-		pill.Opacity(pill.AnimateTo("shown", map[bool]float32{true: 1, false: 0}[chosen >= 0], fadeQuick))
-
+	list := ui.Column(c).Gap(navGap)
+	// The backdrop is painted by the list, under the rows: an absolute
+	// element would cover them.
+	y := list.AnimateTo("y", float32(max(chosen, 0))*(navRowHeight+navGap), motionPanel)
+	shown := list.AnimateTo("shown", map[bool]float32{true: 1, false: 0}[chosen >= 0], motionHover)
+	raised := p.Raised
+	list.Draw(func(pt *ui.Painter, r ui.Rect) {
+		pt.Fill(ui.Rect{X: r.X, Y: r.Y + y, W: r.W, H: navRowHeight}, raised.Alpha(shown), 5)
+	})
+	list.Children(func() {
 		for i, it := range navItems {
 			a.navRow(c.Key(it.path), t, p, it, i == chosen)
 		}
 	})
 }
 
-func (a *App) navRow(c *ui.Context, t *ui.Theme, p *palette, it navItem, on bool) {
-	row := ui.ButtonBase(c).Label(it.label).Height(navRowHeight).Radius(9).PaddingX(12).Gap(12).Justify(ui.Start).
+func (a *App) navRow(c *ui.Context, t *ui.Theme, p *palette, it navItem, on bool) ui.Element {
+	row := ui.ButtonBase(c).Label(it.label).Height(navRowHeight).Radius(5).PaddingX(10).Gap(10).Justify(ui.Start).
 		AlignItems(ui.Center)
-	color := t.TextMuted
+	if a.sidebarCollapsed {
+		row.PaddingX(0).Justify(ui.Center)
+	}
+	text, mark := t.TextMuted, t.TextMuted
 	if on {
-		color = t.Accent
-		if it.path == "/settings" { // outside the pill's list
-			row.Background(p.Selected)
+		text, mark = t.Text, t.Accent
+		if it.path == "/settings" { // outside the backdrop's list
+			row.Background(p.Raised)
 		}
 	} else if row.Hovered() {
 		row.Background(p.Hover)
-		color = t.Text
+		text, mark = t.Text, t.Text
 	}
-	row.TextColor(row.AnimateColor("fg", color, fadeQuick))
+	row.TextColor(row.AnimateColor("fg", text, motionHover))
 	if a.sidebarCollapsed {
 		row.Tooltip(it.label)
 	}
@@ -175,34 +208,35 @@ func (a *App) navRow(c *ui.Context, t *ui.Theme, p *palette, it navItem, on bool
 		badge = a.activeTransfers()
 	}
 	row.Children(func() {
-		ui.Box(c).Children(func() {
-			ui.Icon(c, icon(it.icon)).FontSize(17)
-			if badge > 0 && a.sidebarCollapsed {
-				ui.Box(c).Absolute().Top(-3).Right(-4).Size(8, 8).Radius(4).Background(t.Accent).Transition(popIn)
-			}
-		})
+		mark := row.AnimateColor("mark", mark, motionHover)
+		glyph := ui.Box(c.Key(navKey{it.path, a.navRun, on})).Size(18, 18)
+		ms := float32(navIconRun.Milliseconds())
+		if on && a.navRun > 0 {
+			ms = glyph.Keyframes("gesture", []ui.Keyframe{{At: 0, Value: 0}, {At: navIconRun, Value: ms}})
+		}
+		glyph.Draw(func(pt *ui.Painter, r ui.Rect) { navGlyph(pt, r, it.path, ms, mark) })
+		if badge > 0 && a.sidebarCollapsed {
+			ui.Box(c).Absolute().Top(6).Right(8).Size(6, 6).Radius(3).Background(t.Accent).Transition(popIn)
+		}
 		if !a.sidebarCollapsed {
-			txt := ui.Text(c, it.label).SingleLine().Grow(1)
-			if on {
-				txt.FontWeight(600)
-			}
+			ui.Text(c, it.label).SingleLine().Grow(1).FontWeight(500)
 			if badge > 0 {
-				ui.Text(c, itoa(badge)).FontSize(11).FontWeight(700).Padding(1, 7).Radius(999).
-					Background(t.Accent).TextColor(t.AccentText).FontFeatures("tnum").
-					ContentTransition(ui.ContentTransition{Numeric: true}).Transition(popIn)
+				figure(c, itoa(badge)).FontSize(11).TextColor(t.Accent).
+					ContentTransition(ui.ContentTransition{Numeric: true})
 			}
 		}
 	})
 	if row.Clicked() && a.router.Path() != it.path {
 		a.router.Push(it.path)
 	}
+	return row
 }
 
 // titleBar is the band at the top of the content, under the window
 // controls, which drags the window.
 func (a *App) titleBar(c *ui.Context, t *ui.Theme, p *palette) {
 	bar := c.TitleBar()
-	ui.Row(c).Height(max(bar.Height, titleBarMin)).PaddingStart(20).PaddingEnd(bar.Right + 16).
+	ui.Row(c).Height(max(bar.Height, titleBarMin)).PaddingStart(20).PaddingEnd(controlsRoom(bar) + 8).
 		AlignItems(ui.Center).Gap(10).DragWindow().Children(func() {
 		if dir := a.currentDir(); dir != "" {
 			a.filesToolbar(c, t, p, dir)
@@ -213,7 +247,7 @@ func (a *App) titleBar(c *ui.Context, t *ui.Theme, p *palette) {
 				a.router.Back()
 			}
 		}
-		ui.Text(c, a.router.Title()).FontSize(17).FontWeight(650).SingleLine()
+		ui.Text(c, a.router.Title()).FontSize(15).FontWeight(600).SingleLine()
 		ui.Spacer(c)
 		switch a.section() {
 		case "/recycle":

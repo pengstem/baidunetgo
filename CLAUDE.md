@@ -62,4 +62,5 @@ Dev-only environment variables (see `capture.go`, `app/app.go`, `app/session.go`
 - `ui.List` row selection paints the accent color itself (`Selected()`). The browser covers it with an opaque `selectionFill`.
 - Dialogs focus their first focusable element. A focused button keeps Enter, so main buttons use `AutoFocus` (only in dialogs without a text field).
 - Virtualized `List` rows get no enter/exit transitions. Staggered entrances use `Keyframes` inside the row (`entering` in `browser.go`).
-- Theme: `applyTheme` swaps in the app's light/dark `ui.Theme` each frame. Extra colors are in `palette`. Shared springs/transitions (`springSoft`, `popIn`, `rowEnter`, …) are in `app/theme.go`.
+- Theme: the look is the 刻度 design system (warm grays, one accent for what is happening, lines instead of cards, figures in IBM Plex Mono via `figure`). `applyTheme` swaps in the app's light/dark `ui.Theme` each frame. Extra colors are in `palette`. Motion is one curve and three lengths (`motionHover` 120 ms, `motionFade` 160 ms, `motionPanel` 180 ms), plus `popIn` and `rowEnter`, all in `app/theme.go`; no springs or bounce. Fonts are embedded in `app/fonts` and registered in `app/fonts.go`.
+- Sidebar icons are drawn in code (`app/navicons.go`) so their parts can move; `navGlyph` takes the time into the gesture. A page's icon plays once when the page opens (`a.navRun`).
