@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -143,4 +144,40 @@ func TestTuneFromSettings(t *testing.T) {
 	}
 	tt.Advance(time.Second)
 	save(t, tt, "settings-tune")
+}
+
+// TestGridLongNames keeps a name with no spaces, as release names are,
+// inside its tile instead of running over the tiles beside it.
+func TestGridLongNames(t *testing.T) {
+	a, tt, srv := signedIn(t)
+	names := []string{
+		"Andor.S01E02.ITA.ENG.2160p.UHD.BluRay.DDP.MeM.GP.mkv",
+		"Andor.S01E03.Reckoning.ITA.ENG.2160p.UHD.BluRay.DDP.MeM.GP.mkv",
+		"Andor.S01E04.Aldhani.ITA.ENG.2160p.UHD.BluRay.DDP.MeM.GP.mkv",
+	}
+	for _, n := range names {
+		srv.Add(fakepan.Node{Path: "/剧集/" + n, Category: 1, Size: 8 << 30})
+	}
+	a.gridView = true
+	a.router.Push(filesRoute("/剧集"))
+	waitFor(t, tt, names[0])
+	tt.Advance(time.Second)
+	save(t, tt, "grid-long-names")
+	var prev ui.Rect
+	for i, n := range names {
+		r, ok := tt.Find(a.tileNames[n])
+		if !ok {
+			t.Fatalf("%s not shown; texts %q", n, tt.Texts())
+		}
+		if r.W > tileNameWidth {
+			t.Errorf("%s is %.0f wide, wider than its tile", n, r.W)
+		}
+		if s := a.tileNames[n]; !strings.HasSuffix(s, "GP.mkv") || strings.Count(s, "\n") != 1 {
+			t.Errorf("%s laid out as %q, not two lines ending in its extension", n, s)
+		}
+		if i > 0 && r.X < prev.X+prev.W {
+			t.Errorf("%s overlaps the name before it", n)
+		}
+		prev = r
+	}
 }

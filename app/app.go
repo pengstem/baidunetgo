@@ -37,6 +37,7 @@ type App struct {
 	listingTick uint64
 	order       baidu.Order
 	gridView    bool
+	tileNames   map[string]string // names laid out for grid tiles (tileName)
 	thumbs      *thumbs
 
 	pv            *previewState

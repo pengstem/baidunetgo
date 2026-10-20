@@ -224,13 +224,71 @@ func (a *App) fileGrid(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 					})
 				})
 			}
-			ui.Text(c, f.Name).MaxLines(2).TextAlign(ui.Center).LineHeight(1.25)
+			ui.Text(c, a.tileName(c, f.Name)).NoWrap().TextAlign(ui.Center).LineHeight(1.25)
 		})
 		a.fileMenu(tile, l, i)
 	}).Grow(1).Padding(10, 16, 24).Gap(6)
 	if grid.Submitted() && l.selected >= 0 && l.selected < len(l.files) {
 		a.open(l.files[l.selected])
 	}
+}
+
+// tileNameWidth is how wide a grid tile's name may be: the narrowest
+// tile's width inside its padding.
+const tileNameWidth = 132
+
+// tileName lays a name out for a grid tile on at most two lines, as
+// Finder does: the first breaks where the name stops fitting, after a
+// separator when one is near the end, and the second keeps the end of the
+// name, extension and all, cutting from its middle what does not fit.
+// Release names have no spaces, so wrapping alone runs them over the
+// tiles beside them or ends them before the episode and extension.
+func (a *App) tileName(c *ui.Context, name string) string {
+	if s, ok := a.tileNames[name]; ok {
+		return s
+	}
+	fits := func(r []rune) bool {
+		w, _ := c.MeasureText(0, ui.Span{Text: string(r)})
+		return w <= tileNameWidth
+	}
+	// longest is the most runes, at least one, that fit of those f takes.
+	longest := func(n int, f func(int) []rune) int {
+		lo, hi := 1, n
+		for lo < hi {
+			m := (lo + hi + 1) / 2
+			if fits(f(m)) {
+				lo = m
+			} else {
+				hi = m - 1
+			}
+		}
+		return lo
+	}
+	r := []rune(name)
+	out := name
+	if !fits(r) {
+		cut := longest(len(r), func(n int) []rune { return r[:n] })
+		for i := cut - 1; i >= cut*2/3; i-- {
+			if strings.ContainsRune(" ._-()[]【】", r[i]) {
+				cut = i + 1
+				break
+			}
+		}
+		first, rest := r[:cut], []rune(strings.TrimLeft(string(r[cut:]), " "))
+		if !fits(rest) {
+			middle := func(n int) []rune {
+				head, tail := rest[:n-n/2], rest[len(rest)-n/2:]
+				return append(append(append([]rune{}, head...), '…'), tail...)
+			}
+			rest = middle(longest(len(rest), middle))
+		}
+		out = strings.TrimRight(string(first), " ") + "\n" + string(rest)
+	}
+	if a.tileNames == nil {
+		a.tileNames = map[string]string{}
+	}
+	a.tileNames[name] = out
+	return out
 }
 
 // fileIcon shows a file's thumbnail, else a solid folder, else its kind's
