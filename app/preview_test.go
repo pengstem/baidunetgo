@@ -1,12 +1,15 @@
 package app
 
 import (
+	"bytes"
 	"image"
 	"image/png"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/egoist/mygo/transfer"
 	"github.com/egoist/mygo/ui"
 
 	"github.com/pengstem/baidunetgo/internal/baidu"
@@ -46,6 +49,13 @@ func TestPreviewText(t *testing.T) {
 	}
 	tt.Advance(time.Second)
 	save(t, tt, "preview-text")
+	if err := tt.Click("复制全文"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Advance(100 * time.Millisecond)
+	if got := tt.Clipboard(); !strings.HasPrefix(got, "BaiduNetGo 演示文件\n") {
+		t.Errorf("clipboard %q", got)
+	}
 	tt.Key(0, keyEscape)
 	tt.Advance(time.Second)
 	if a.pv != nil {
@@ -100,6 +110,83 @@ func TestPreviewImage(t *testing.T) {
 	tt.Advance(100 * time.Millisecond)
 	if a.pv.file.Name != "IMG_2313.jpg" {
 		t.Errorf("Right went to %s", a.pv.file.Name)
+	}
+}
+
+// clipboardPicture waits for a picture on the clipboard and decodes it.
+func clipboardPicture(t *testing.T, tt *ui.Tester) image.Image {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if data, err := tt.ClipboardData().Read(transfer.PNG); err == nil {
+			img, err := png.Decode(bytes.NewReader(data))
+			if err != nil {
+				t.Fatal(err)
+			}
+			return img
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("no picture was copied")
+		}
+		time.Sleep(10 * time.Millisecond)
+		tt.Advance(50 * time.Millisecond)
+	}
+}
+
+func TestPreviewCopyImage(t *testing.T) {
+	a, tt, _ := signedIn(t)
+	a.router.Push(filesRoute("/照片"))
+	waitFor(t, tt, "IMG_2310.jpg")
+	a.open(fileNamed(t, a, "/照片", "IMG_2311.jpg"))
+	deadline := time.Now().Add(5 * time.Second)
+	for a.pv.bmp == nil {
+		if a.pv.err != "" || time.Now().After(deadline) {
+			t.Fatalf("image did not load: %q", a.pv.err)
+		}
+		time.Sleep(10 * time.Millisecond)
+		tt.Advance(50 * time.Millisecond)
+	}
+	tt.Advance(500 * time.Millisecond)
+	tt.Key(ui.Cmd, ui.KeyC)
+	if b := clipboardPicture(t, tt).Bounds(); b.Dx() != 640 || b.Dy() != 480 {
+		t.Errorf("copied %v", b)
+	}
+	tt.Key(ui.Cmd, ui.KeyEqual)
+	if a.pv.zoom != 1.5 {
+		t.Errorf("Cmd= zoomed to %v", a.pv.zoom)
+	}
+	tt.Key(ui.Cmd, ui.Key0)
+	if a.pv.zoom != 1 {
+		t.Errorf("Cmd0 left zoom %v", a.pv.zoom)
+	}
+	tt.Advance(300 * time.Millisecond)
+	tt.RightClickAt(1180/2, 760/2)
+	tt.Advance(100 * time.Millisecond)
+	if err := tt.ChooseMenuItem("复制路径"); err != nil {
+		t.Fatalf("%v: %q", err, tt.Menu())
+	}
+	tt.Advance(100 * time.Millisecond)
+	if got := tt.Clipboard(); got != "/照片/IMG_2311.jpg" {
+		t.Errorf("clipboard %q", got)
+	}
+}
+
+func TestCopyImageFromList(t *testing.T) {
+	a, tt, _ := signedIn(t)
+	a.router.Push(filesRoute("/照片/京都"))
+	waitFor(t, tt, "kyoto-1.png")
+	if err := tt.RightClick("kyoto-1.png"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Advance(100 * time.Millisecond)
+	if err := tt.ChooseMenuItem("复制图片"); err != nil {
+		t.Fatalf("%v: %q", err, tt.Menu())
+	}
+	if b := clipboardPicture(t, tt).Bounds(); b.Dx() != 800 || b.Dy() != 600 {
+		t.Errorf("copied %v", b)
+	}
+	if !tt.HasText("已复制图片") {
+		t.Error("no toast")
 	}
 }
 
