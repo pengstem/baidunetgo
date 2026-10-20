@@ -39,6 +39,8 @@ func (a *App) filesPage(c *ui.Context, t *ui.Theme, p *palette, dir string) {
 		switch {
 		case !l.loaded && l.err != "":
 			emptyState(c, t, p, "triangle-alert", "无法读取这个文件夹", l.err, func() { a.load(l) })
+		case !l.loaded && a.gridView:
+			a.skeletonTiles(c, t)
 		case !l.loaded:
 			skeletonRows(c, t, p)
 		case len(l.files) == 0:
