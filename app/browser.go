@@ -77,10 +77,6 @@ func (a *App) bindListState(l *listing) {
 	l.list.Label = func(i int) string { return files[i].Name }
 	l.list.Selected = &l.selected
 	l.list.Selection = &l.sel
-	l.grid.Key = l.list.Key
-	l.grid.Label = l.list.Label
-	l.grid.Selected = &l.selected
-	l.grid.Selection = &l.sel
 }
 
 func (a *App) fileList(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
@@ -202,14 +198,10 @@ func statusDot(c *ui.Context, color ui.Color, label string) {
 }
 
 func (a *App) fileGrid(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
-	a.bindListState(l)
 	now := c.Now()
-	grid := ui.GridView(c, &l.grid, len(l.files), 148, 178, func(i int) {
+	a.tileGrid(c, l, func(i int, tile ui.Element) {
 		f := &l.files[i]
-		// One plane: the tile's own fill, opaque and 2 DIP over the cell's
-		// edges so that it covers the border and fill the grid paints for
-		// a hovered or chosen cell, and no frames inside it.
-		tile := ui.Column(c).Absolute().Top(-2).Left(-2).Right(-2).Bottom(-2).Padding(10).Gap(8).AlignItems(ui.Center).Radius(t.Radius).TextColor(t.Text)
+		tile.Padding(10).Gap(8).AlignItems(ui.Center).Radius(t.Radius).TextColor(t.Text)
 		fill := t.Background
 		switch {
 		case l.sel.Has(f.FsID):
@@ -252,10 +244,7 @@ func (a *App) fileGrid(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 			ui.Text(c, a.tileName(c, f.Name)).NoWrap().TextAlign(ui.Center).LineHeight(1.25)
 		})
 		a.fileMenu(tile, l, i)
-	}).Grow(1).Padding(10, 16, 24).Gap(6)
-	if grid.Submitted() && l.selected >= 0 && l.selected < len(l.files) {
-		a.open(l.files[l.selected])
-	}
+	})
 }
 
 // tileNameWidth is how wide a grid tile's name may be: the narrowest

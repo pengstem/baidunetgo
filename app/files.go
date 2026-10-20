@@ -29,7 +29,7 @@ type listing struct {
 	shown   time.Time // when the files first showed, to stagger them in
 
 	list     ui.ListState
-	grid     ui.GridState
+	grid     gridState
 	sel      ui.Selection[int64]
 	selected int
 	used     uint64
