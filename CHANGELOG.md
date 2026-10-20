@@ -4,6 +4,12 @@
 
 <!-- 写在这里的内容会成为下一个版本的更新说明；留空则按提交记录自动生成。 -->
 
+## [0.4.5] - 2026-10-20
+
+### 改进
+
+- Give the app an icon, a white cloud with a download arrow on a blue squircle in the accent's colors, drawn by tools/appicon into resources/icon.png, which mygo build turns into the macOS .icns, the Windows executable's icon and the Linux desktop entry's; builds had none and showed the generic app icon
+
 ## [0.4.4] - 2026-10-20
 
 ### 改进
