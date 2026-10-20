@@ -74,8 +74,12 @@ type Manager struct {
 	expired   func(error) bool
 	statePath string
 
-	// Threads is connections per download, Parallel tasks at once.
-	Threads, Parallel int
+	// Threads is connections per download, Upload per upload, Parallel
+	// tasks at once.
+	Threads, Upload, Parallel int
+	// Block is the bytes a download request asks for; downloads resumed
+	// keep the size they began with.
+	Block int64
 	// OnChange is called, from any goroutine, when tasks change or move.
 	OnChange func()
 	// OnFinish is called as a task ends, done or failed.
@@ -91,7 +95,7 @@ type Manager struct {
 // New makes a manager, loading the tasks saved at statePath ("" keeps
 // none). Tasks that ran when the app quit wait, paused.
 func New(nd Netdisk, expired func(error) bool, statePath string) *Manager {
-	m := &Manager{nd: nd, expired: expired, statePath: statePath, Threads: 4, Parallel: 2, stop: make(chan struct{})}
+	m := &Manager{nd: nd, expired: expired, statePath: statePath, Threads: 4, Upload: 4, Parallel: 2, Block: defaultBlock, stop: make(chan struct{})}
 	if statePath != "" {
 		if data, err := os.ReadFile(statePath); err == nil {
 			json.Unmarshal(data, &m.tasks)
@@ -302,7 +306,7 @@ func (m *Manager) run(ctx context.Context, t *Task) {
 	case Download:
 		err = m.download(ctx, t)
 	case Upload:
-		err = m.nd.Upload(ctx, t.Local, t.Remote, m.Threads, func(done, total int64) {
+		err = m.nd.Upload(ctx, t.Local, t.Remote, m.Upload, func(done, total int64) {
 			t.done.Store(done)
 			if total > 0 {
 				m.mu.Lock()

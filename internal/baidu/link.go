@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 )
 
@@ -16,15 +17,27 @@ var pcsURL = &url.URL{Scheme: "https", Host: "pcs.baidu.com", Path: "/"}
 // with Headers can read, as a player streams it. Links expire within
 // hours: ask for a new one each time.
 func (c *Client) DownloadURL(ctx context.Context, path string) (string, error) {
+	links, err := c.DownloadURLs(ctx, path)
+	if err != nil {
+		return "", err
+	}
+	return links[0], nil
+}
+
+// DownloadURLs returns the links the netdisk offers to the file's
+// content, each on its own host, the one to use first: hosts SetHosts
+// ranked, in its order, then others, then the nb.cache hosts, which
+// throttle hard.
+func (c *Client) DownloadURLs(ctx context.Context, path string) ([]string, error) {
 	if c.fake() {
-		return c.base + "/file?" + url.Values{"path": {path}}.Encode(), nil
+		return c.fakeURLs(ctx, path)
 	}
 	if _, err := c.uid(); err != nil {
-		return "", fmt.Errorf("获取下载链接失败：%w", err)
+		return nil, fmt.Errorf("获取下载链接失败：%w", err)
 	}
 	type result struct {
-		u   string
-		err error
+		links []string
+		err   error
 	}
 	done := make(chan result, 1)
 	go func() {
@@ -33,30 +46,81 @@ func (c *Client) DownloadURL(ctx context.Context, path string) (string, error) {
 			done <- result{err: fmt.Errorf("获取下载链接失败：%w", perr)}
 			return
 		}
-		var fallback string
+		var links []string
+		seen := map[string]bool{}
 		for _, u := range info.URLStrings(true) {
-			s := u.String()
-			if fallback == "" {
-				fallback = s
-			}
-			// nb.cache hosts throttle hard; prefer any other.
-			if !strings.HasPrefix(u.Host, "nb.cache") {
-				done <- result{u: s}
-				return
+			if !seen[u.Host] {
+				seen[u.Host] = true
+				links = append(links, u.String())
 			}
 		}
-		if fallback == "" {
+		if len(links) == 0 {
 			done <- result{err: errors.New("获取下载链接失败：没有可用链接")}
 			return
 		}
-		done <- result{u: fallback}
+		done <- result{links: c.rank(links)}
 	}()
 	select {
 	case r := <-done:
-		return r.u, r.err
+		return r.links, r.err
 	case <-ctx.Done():
-		return "", ctx.Err()
+		return nil, ctx.Err()
 	}
+}
+
+// fakeURLs asks a pretend netdisk for its links to the file.
+func (c *Client) fakeURLs(ctx context.Context, path string) ([]string, error) {
+	var res struct {
+		URLs []struct {
+			URL string `json:"url"`
+		} `json:"urls"`
+	}
+	if err := c.getJSON(ctx, "获取下载链接", "/locatedownload", url.Values{"path": {path}}, &res); err != nil {
+		return nil, err
+	}
+	var links []string
+	for _, u := range res.URLs {
+		links = append(links, u.URL)
+	}
+	if len(links) == 0 {
+		return nil, errors.New("获取下载链接失败：没有可用链接")
+	}
+	return c.rank(links), nil
+}
+
+// SetHosts ranks download hosts, fastest first, as a measurement found
+// them; DownloadURL prefers them in this order.
+func (c *Client) SetHosts(hosts []string) {
+	c.mu.Lock()
+	c.hosts = slices.Clone(hosts)
+	c.mu.Unlock()
+}
+
+// rank orders links as DownloadURLs returns them.
+func (c *Client) rank(links []string) []string {
+	c.mu.Lock()
+	hosts := c.hosts
+	c.mu.Unlock()
+	score := func(link string) int {
+		h := Host(link)
+		if i := slices.Index(hosts, h); i >= 0 {
+			return i
+		}
+		if strings.HasPrefix(h, "nb.cache") {
+			return len(hosts) + 1
+		}
+		return len(hosts)
+	}
+	slices.SortStableFunc(links, func(a, b string) int { return score(a) - score(b) })
+	return links
+}
+
+// Host returns the host of a link.
+func Host(link string) string {
+	if u, err := url.Parse(link); err == nil {
+		return u.Host
+	}
+	return ""
 }
 
 // Cookie returns the cookie header that download hosts take, those the

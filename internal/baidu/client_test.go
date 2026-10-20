@@ -82,3 +82,15 @@ func TestErrno(t *testing.T) {
 		t.Errorf("errno -9: %v", err)
 	}
 }
+
+func TestRankHosts(t *testing.T) {
+	c := Open(Credentials{BDUSS: "x"})
+	got := c.rank([]string{"https://nb.cache.x/1", "https://d.pcs.baidu.com/1", "https://b.baidupcs.com/1"})
+	if Host(got[0]) != "d.pcs.baidu.com" || Host(got[2]) != "nb.cache.x" {
+		t.Errorf("nb.cache not last: %v", got)
+	}
+	c.SetHosts([]string{"b.baidupcs.com"})
+	if got := c.rank(got); Host(got[0]) != "b.baidupcs.com" {
+		t.Errorf("ranked host not first: %v", got)
+	}
+}

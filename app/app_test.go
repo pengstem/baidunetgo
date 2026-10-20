@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -117,4 +118,29 @@ func TestSettingsPage(t *testing.T) {
 	tt.SetDark(true)
 	tt.Advance(500 * time.Millisecond)
 	save(t, tt, "settings-dark")
+}
+
+func TestTuneFromSettings(t *testing.T) {
+	old := tunePer
+	tunePer = 100 * time.Millisecond
+	t.Cleanup(func() { tunePer = old })
+	a, tt, _ := signedIn(t)
+	a.router.Push("/settings")
+	waitFor(t, tt, "重测")
+	tt.Click("重测")
+	waitFor(t, tt, "已根据测速优化")
+	for _, want := range []string{"下载线路", "每个文件的连接数", "请求块大小", "同时传输的文件数", "每个上传的连接数"} {
+		if !tt.HasText(want) {
+			t.Errorf("%q missing; texts %q", want, tt.Texts())
+		}
+	}
+	cfg := a.transferConfig()
+	if len(cfg.Hosts) != 2 || a.xfer.Block != cfg.Block || a.xfer.Upload != cfg.Upload {
+		t.Errorf("config %+v not in force (block %d, upload %d)", cfg, a.xfer.Block, a.xfer.Upload)
+	}
+	if first, _ := a.sess.client.DownloadURL(context.Background(), "/安装包.dmg"); baidu.Host(first) != cfg.Hosts[0] {
+		t.Errorf("link %s not on the fastest host %s", first, cfg.Hosts[0])
+	}
+	tt.Advance(time.Second)
+	save(t, tt, "settings-tune")
 }

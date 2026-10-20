@@ -24,7 +24,10 @@ func (a *App) applySettings() {
 func (a *App) useSettings() {
 	cfg := a.transferConfig()
 	if a.xfer != nil {
-		a.xfer.Threads, a.xfer.Parallel = cfg.Threads, cfg.Parallel
+		a.xfer.Threads, a.xfer.Parallel, a.xfer.Upload, a.xfer.Block = cfg.Threads, cfg.Parallel, cfg.Upload, cfg.Block
+	}
+	if a.sess != nil {
+		a.sess.client.SetHosts(cfg.Hosts)
 	}
 	a.useStreaming(cfg)
 	if mb := a.settings.PreviewMB; mb > 0 {

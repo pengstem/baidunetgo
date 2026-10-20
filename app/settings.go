@@ -17,9 +17,10 @@ type settings struct {
 	DownloadDir string `json:"download_dir,omitempty"` // where downloads go, Downloads when empty
 	Threads     int    `json:"threads,omitempty"`      // connections per download
 	Parallel    int    `json:"parallel,omitempty"`     // downloads at once
+	Upload      int    `json:"upload,omitempty"`       // connections per upload
 	PreviewMB   int    `json:"preview_mb,omitempty"`   // largest picture or text previewed, in MB
-	// Manual keeps Threads and Parallel as set; else they follow the
-	// membership and the last measurement.
+	// Manual keeps Threads, Parallel and Upload as set; else they follow
+	// the membership and the last measurement, as the rest always does.
 	Manual bool `json:"manual_transfer,omitempty"`
 	// Tune is the last measurement of download speeds, and the
 	// membership it was made with.
@@ -76,6 +77,13 @@ func (s settings) parallel() int {
 		return 2
 	}
 	return s.Parallel
+}
+
+func (s settings) upload() int {
+	if s.Upload <= 0 {
+		return 4
+	}
+	return s.Upload
 }
 
 func (s settings) downloadDir() string {

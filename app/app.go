@@ -48,6 +48,7 @@ type App struct {
 	stream        *stream.Server
 	tuning        bool   // measuring download speeds
 	tuneErr       string // why the last measurement failed
+	tuneStage     string // what the measurement measures now
 	transfers     transfersState
 	shareForm     shareForm
 	shares        sharesState

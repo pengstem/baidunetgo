@@ -15,6 +15,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path"
 	"slices"
 	"strconv"
@@ -37,6 +38,9 @@ type Node struct {
 // Server is the fake netdisk.
 type Server struct {
 	*httptest.Server
+	// mirror is a second download host, the same netdisk on another
+	// port.
+	mirror *httptest.Server
 
 	mu       sync.Mutex
 	nodes    map[string]*Node
@@ -66,10 +70,25 @@ func New() *Server {
 	mux.HandleFunc("/api/search", s.search)
 	mux.HandleFunc("/thumb", s.thumb)
 	mux.HandleFunc("/file", s.file)
+	mux.HandleFunc("/locatedownload", s.locate)
 	s.opsRoutes(mux)
 	s.shareRoutes(mux)
 	s.Server = httptest.NewServer(mux)
+	s.mirror = httptest.NewServer(mux)
 	return s
+}
+
+// Close stops both hosts.
+func (s *Server) Close() {
+	s.mirror.Close()
+	s.Server.Close()
+}
+
+// locate lists a file's download links, one on each host, as the
+// netdisk's locatedownload does.
+func (s *Server) locate(w http.ResponseWriter, r *http.Request) {
+	q := "/file?" + url.Values{"path": {r.URL.Query().Get("path")}}.Encode()
+	writeJSON(w, map[string]any{"urls": []map[string]string{{"url": s.URL + q}, {"url": s.mirror.URL + q}}})
 }
 
 // Add puts a node in the tree, making its parent directories.
@@ -159,8 +178,9 @@ func writeJSON(w http.ResponseWriter, v any) {
 }
 
 func (s *Server) loginStatus(w http.ResponseWriter, r *http.Request) {
+	// The real endpoint sends vip_type as a string ("22" for an annual SVIP).
 	writeJSON(w, map[string]any{"errno": 0, "login_info": map[string]any{
-		"uk": 42, "username": "演示用户", "bdstoken": "faketoken", "photo_url": s.URL + "/thumb?id=7", "vip_type": 2, "is_svip": 1,
+		"uk": 42, "username": "演示用户", "bdstoken": "faketoken", "photo_url": s.URL + "/thumb?id=7", "vip_type": "22", "is_svip": 1,
 	}})
 }
 

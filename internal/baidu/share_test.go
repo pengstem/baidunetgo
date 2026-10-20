@@ -65,3 +65,18 @@ func TestSharesAndOffline(t *testing.T) {
 		t.Fatalf("%+v %v", tasks, err)
 	}
 }
+
+func TestDownloadURLsFollowHosts(t *testing.T) {
+	srv := fakepan.New()
+	defer srv.Close()
+	c := baidu.OpenAt(baidu.Credentials{BDUSS: "x", UID: 1}, srv.URL)
+	links, err := c.DownloadURLs(context.Background(), "/a.bin")
+	if err != nil || len(links) != 2 {
+		t.Fatalf("links %v, %v", links, err)
+	}
+	second := baidu.Host(links[1])
+	c.SetHosts([]string{second})
+	if first, _ := c.DownloadURL(context.Background(), "/a.bin"); baidu.Host(first) != second {
+		t.Errorf("first %s, want the ranked %s", first, second)
+	}
+}

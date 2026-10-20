@@ -154,16 +154,28 @@ func TestLiveProbe(t *testing.T) {
 	}
 	c := baidu.Open(acc.Creds)
 	ctx := context.Background()
-	f, err := tune.FindFile(ctx, c, 256<<20)
+	files, err := tune.FindFiles(ctx, c, 256<<20, 2)
 	if err != nil {
 		t.Skip(err)
 	}
-	r, err := tune.Probe(ctx, c, f, []int{8, 16, 24, 32, 48}, 8*time.Second, 1500<<20)
+	r, err := tune.Probe(ctx, c, files, tune.Options{VIP: 2, Per: 8 * time.Second, Budget: 1500 << 20, Upload: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, s := range r.Samples {
-		t.Logf("%2d 连接 %6.2f MB/s 错误 %d %s", s.Threads, s.Speed/(1<<20), s.Errors, s.Err)
+	for _, g := range [][]tune.Sample{r.Hosts, r.Threads, r.Blocks, r.Files, r.Upload} {
+		for _, s := range g {
+			t.Logf("%s %d %6.2f MB/s 错误 %d %s", s.Host, s.Value, s.Speed/(1<<20), s.Errors, s.Err)
+		}
 	}
-	t.Logf("best %d", r.Best())
+	t.Logf("%+v", tune.Recommend(2, r))
+	// The upload probe never finished its upload: nothing is left.
+	root, err := c.List(ctx, "/", baidu.Order{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range root {
+		if f.Name == ".baidunetgo-probe" {
+			t.Error("upload probe left a file")
+		}
+	}
 }

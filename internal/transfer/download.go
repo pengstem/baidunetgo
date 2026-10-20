@@ -12,15 +12,16 @@ import (
 )
 
 const (
-	partExt   = ".bngdl"
-	metaExt   = ".json"
-	blockSize = 4 << 20
+	partExt      = ".bngdl"
+	metaExt      = ".json"
+	defaultBlock = 4 << 20
 )
 
 // partMeta is what a download has done, beside its part file, to resume.
 type partMeta struct {
 	Remote string `json:"remote"`
 	Size   int64  `json:"size"`
+	Block  int64  `json:"block,omitempty"` // bytes a block, 4 MB when 0
 	Blocks []bool `json:"blocks"`
 }
 
@@ -38,12 +39,21 @@ func (m *Manager) download(ctx context.Context, t *Task) error {
 		}
 		return err
 	}
+	blockSize := m.Block
+	if blockSize <= 0 {
+		blockSize = defaultBlock
+	}
 	n := int((t.Size + blockSize - 1) / blockSize)
-	meta := partMeta{Remote: t.Remote, Size: t.Size, Blocks: make([]bool, n)}
+	meta := partMeta{Remote: t.Remote, Size: t.Size, Block: blockSize, Blocks: make([]bool, n)}
 	if data, err := os.ReadFile(metaPath); err == nil {
 		var saved partMeta
-		if json.Unmarshal(data, &saved) == nil && saved.Size == t.Size && saved.Remote == t.Remote && len(saved.Blocks) == n {
-			meta = saved
+		if json.Unmarshal(data, &saved) == nil && saved.Size == t.Size && saved.Remote == t.Remote {
+			if saved.Block <= 0 {
+				saved.Block = defaultBlock
+			}
+			if len(saved.Blocks) == int((t.Size+saved.Block-1)/saved.Block) {
+				meta, blockSize, n = saved, saved.Block, len(saved.Blocks)
+			}
 		}
 	}
 	f, err := os.OpenFile(part, os.O_RDWR|os.O_CREATE, 0o644)
@@ -68,7 +78,7 @@ func (m *Manager) download(ctx context.Context, t *Task) error {
 	doneBytes := int64(0)
 	for i, ok := range meta.Blocks {
 		if ok {
-			doneBytes += blockLen(i, t.Size)
+			doneBytes += blockLen(i, blockSize, t.Size)
 		}
 	}
 	t.done.Store(doneBytes)
@@ -121,7 +131,7 @@ func (m *Manager) download(ctx context.Context, t *Task) error {
 				if i < 0 || ctx.Err() != nil {
 					return
 				}
-				err := m.fetchBlock(ctx, t, f, i, buf, getLink)
+				err := m.fetchBlock(ctx, t, f, i, blockSize, buf, getLink)
 				mu.Lock()
 				if err != nil {
 					if firstErr == nil && ctx.Err() == nil {
@@ -160,16 +170,16 @@ func (m *Manager) download(ctx context.Context, t *Task) error {
 	return nil
 }
 
-func blockLen(i int, size int64) int64 {
-	start := int64(i) * blockSize
-	return min(blockSize, size-start)
+func blockLen(i int, block, size int64) int64 {
+	start := int64(i) * block
+	return min(block, size-start)
 }
 
 // fetchBlock reads block i into f, trying again with a new link when it
 // expired and after a pause when the connection failed.
-func (m *Manager) fetchBlock(ctx context.Context, t *Task, f *os.File, i int, buf []byte, getLink func(int) (string, int, error)) error {
-	start := int64(i) * blockSize
-	length := blockLen(i, t.Size)
+func (m *Manager) fetchBlock(ctx context.Context, t *Task, f *os.File, i int, block int64, buf []byte, getLink func(int) (string, int, error)) error {
+	start := int64(i) * block
+	length := blockLen(i, block, t.Size)
 	gen := 0
 	var lastErr error
 	for attempt := range 5 {

@@ -7,8 +7,10 @@
 package pcsport
 
 import (
+	"bytes"
 	"context"
 	"crypto/md5"
+	"crypto/rand"
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/hex"
@@ -19,6 +21,8 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/qjfoidnh/BaiduPCS-Go/baidupcs"
@@ -220,3 +224,59 @@ func dataOffset(contentMD5 string, uk, t, size, sub int64) (int64, error) {
 
 // Dir returns the directory of a netdisk path, for making it first.
 func Dir(p string) string { return path.Dir(p) }
+
+// ProbeUpload sends random parts over parallel connections for up to d,
+// to an upload it never joins, so the netdisk keeps nothing, and returns
+// how many bytes went and the requests that failed.
+func ProbeUpload(ctx context.Context, pcs *baidupcs.BaiduPCS, target string, parallel int, d time.Duration) (sent int64, errs int, lastErr error) {
+	perr, res := pcs.FakeRapidUpload(target, baidupcs.OverWritePolicy, 2*baidupcs.MinUploadBlockSize)
+	if perr != nil {
+		return 0, 0, fmt.Errorf("上传测速失败：%w", perr)
+	}
+	if res.UploadID == "" {
+		return 0, 0, errors.New("上传测速失败：没有拿到上传编号")
+	}
+	ctx, cancel := context.WithTimeout(ctx, d)
+	defer cancel()
+	pu := &partUpload{pcs: pcs, target: target, client: uploadClient(pcs)}
+	part := make([]byte, baidupcs.MinUploadBlockSize)
+	rand.Read(part)
+	var (
+		total atomic.Int64
+		mu    sync.Mutex
+		wg    sync.WaitGroup
+	)
+	for w := range max(parallel, 1) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for seq := w; ctx.Err() == nil; seq += parallel {
+				r := &countReader{r: bytes.NewReader(part), n: int64(len(part)), sent: &total}
+				if _, err := pu.TmpFile(ctx, res.UploadID, target, seq%2, int64(seq%2)*int64(len(part)), r); err != nil && ctx.Err() == nil {
+					mu.Lock()
+					errs++
+					lastErr = err
+					mu.Unlock()
+					time.Sleep(300 * time.Millisecond)
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	return total.Load(), errs, lastErr
+}
+
+// countReader is a part that counts its bytes as the request reads them.
+type countReader struct {
+	r    io.Reader
+	n    int64
+	sent *atomic.Int64
+}
+
+func (c *countReader) Read(p []byte) (int, error) {
+	k, err := c.r.Read(p)
+	c.sent.Add(int64(k))
+	return k, err
+}
+
+func (c *countReader) Len() int64 { return c.n }

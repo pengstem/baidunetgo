@@ -41,7 +41,7 @@ func (c *counting) Fetch(ctx context.Context, u string, off, n int64) (*http.Res
 func setup(t *testing.T) (*fakepan.Server, *counting, []byte) {
 	srv := fakepan.New()
 	t.Cleanup(srv.Close)
-	data := make([]byte, 3*blockSize+12345)
+	data := make([]byte, 3*defaultBlock+12345)
 	rand.New(rand.NewSource(1)).Read(data)
 	srv.Add(fakepan.Node{Path: "/大文件.bin", Data: data})
 	c := &counting{Client: baidu.OpenAt(baidu.Credentials{BDUSS: "x", UID: 1}, srv.URL)}
@@ -96,12 +96,13 @@ func TestDownloadResumes(t *testing.T) {
 	local := filepath.Join(dir, "大文件.bin")
 	// Two blocks were done before the app quit.
 	part := make([]byte, len(data))
-	copy(part[:2*blockSize], data[:2*blockSize])
+	copy(part[:2*defaultBlock], data[:2*defaultBlock])
 	os.WriteFile(local+partExt, part, 0o644)
 	meta, _ := json.Marshal(partMeta{Remote: "/大文件.bin", Size: int64(len(data)), Blocks: []bool{true, true, false, false}})
 	os.WriteFile(local+partExt+metaExt, meta, 0o644)
 	m := New(c, baidu.Expired, "")
 	defer m.Close()
+	m.Block = 1 << 20 // a new size since: the download keeps its own
 	m.mu.Lock()
 	m.add(&Task{Kind: Download, Name: "大文件.bin", Remote: "/大文件.bin", Local: local, Size: int64(len(data))})
 	m.mu.Unlock()
@@ -113,6 +114,23 @@ func TestDownloadResumes(t *testing.T) {
 	}
 	if n := c.fetches.Load(); n != 2 {
 		t.Errorf("fetched %d blocks, want the 2 left", n)
+	}
+}
+
+func TestDownloadBlockSize(t *testing.T) {
+	_, c, data := setup(t)
+	dir := t.TempDir()
+	m := New(c, baidu.Expired, "")
+	defer m.Close()
+	m.Block = 1 << 20
+	m.AddDownloads([]baidu.File{{Path: "/大文件.bin", Name: "大文件.bin", Size: int64(len(data))}}, dir)
+	task := wait(t, m, Done)
+	got, _ := os.ReadFile(task.Local)
+	if !bytes.Equal(got, data) {
+		t.Fatal("content differs")
+	}
+	if want := int32((len(data) + 1<<20 - 1) / (1 << 20)); c.fetches.Load() != want {
+		t.Errorf("fetched %d blocks, want %d of 1 MB", c.fetches.Load(), want)
 	}
 }
 

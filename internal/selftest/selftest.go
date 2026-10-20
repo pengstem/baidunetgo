@@ -505,35 +505,61 @@ func (r *run) recycle() {
 	})
 }
 
-// speed measures downloads with more and more connections.
+// speed measures transfers: hosts, connections, request sizes, files
+// at once and upload connections.
 func (r *run) speed(vip int) {
-	var f baidu.File
+	var files []baidu.File
 	if !r.check("寻找测速文件", func() (string, error) {
 		var err error
-		f, err = tune.FindFile(r.ctx, r.c, 64<<20)
-		return fmt.Sprintf("%s（%s）", f.Path, size(int(f.Size))), err
+		files, err = tune.FindFiles(r.ctx, r.c, 64<<20, 2)
+		var names []string
+		for _, f := range files {
+			names = append(names, fmt.Sprintf("%s（%s）", f.Path, size(int(f.Size))))
+		}
+		return strings.Join(names, "、"), err
 	}) {
 		r.rep.Config = tune.ForVIP(vip)
 		return
 	}
 	r.check("测速", func() (string, error) {
-		res, err := tune.Probe(r.ctx, r.c, f, []int{1, 2, 4, 8, 16}, 8*time.Second, 600<<20)
+		res, err := tune.Probe(r.ctx, r.c, files, tune.Options{
+			VIP: vip, Threads: []int{1, 2, 4, 8, 16}, Per: 8 * time.Second, Budget: 1200 << 20, Upload: true,
+			Stage: func(name string) { r.logf("测速：%s", name) },
+		})
 		if err != nil {
 			return "", err
 		}
 		r.rep.Probe = res
-		var parts []string
-		for _, s := range res.Samples {
-			p := fmt.Sprintf("%d 连接 %.2f MB/s", s.Threads, s.Speed/(1<<20))
-			if s.Errors > 0 {
-				p += fmt.Sprintf("（%d 次出错：%s）", s.Errors, s.Err)
+		line := func(title string, samples []tune.Sample, label func(tune.Sample) string) string {
+			var parts []string
+			for _, s := range samples {
+				p := fmt.Sprintf("%s %.2f MB/s", label(s), s.Speed/(1<<20))
+				if s.Errors > 0 {
+					p += fmt.Sprintf("（%d 次出错：%s）", s.Errors, s.Err)
+				}
+				parts = append(parts, p)
 			}
-			parts = append(parts, p)
+			return title + "：" + strings.Join(parts, "，")
 		}
-		return fmt.Sprintf("取链接 %v，首字节 %v；%s", res.Link.Round(time.Millisecond), res.FirstByte.Round(time.Millisecond), strings.Join(parts, "；")), nil
+		count := func(unit string) func(tune.Sample) string {
+			return func(s tune.Sample) string { return fmt.Sprintf("%d %s", s.Value, unit) }
+		}
+		out := []string{fmt.Sprintf("取链接 %v，首字节 %v，%s", res.Link.Round(time.Millisecond), res.FirstByte.Round(time.Millisecond), res.Proto)}
+		out = append(out,
+			line("线路", res.Hosts, func(s tune.Sample) string { return s.Host }),
+			line("连接", res.Threads, count("连接")),
+			line("块", res.Blocks, func(s tune.Sample) string { return size(int(s.Value)) }),
+			line("同时", res.Files, count("文件")),
+			line("上传", res.Upload, count("连接")))
+		if res.UploadErr != "" {
+			out = append(out, "上传测速："+res.UploadErr)
+		}
+		return strings.Join(out, "；"), nil
 	})
 	r.rep.Config = tune.Recommend(vip, r.rep.Probe)
-	r.logf("推荐配置：每个文件 %d 连接，同时 %d 个文件", r.rep.Config.Threads, r.rep.Config.Parallel)
+	cfg := r.rep.Config
+	r.logf("推荐配置：每个文件 %d 连接，同时 %d 个文件，块 %s，上传 %d 连接，预读 %d，线路 %v",
+		cfg.Threads, cfg.Parallel, size(int(cfg.Block)), cfg.Upload, cfg.Ahead, cfg.Hosts)
 }
 
 // cleanup deletes the folder and purges it from the recycle bin.

@@ -26,6 +26,11 @@ func (s *Server) opsRoutes(mux *http.ServeMux) {
 
 // upload stores the request's body as a file, as the netdisk's uploads end.
 func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
+	// A speed probe's parts, never joined into a file.
+	if r.URL.Query().Has("probe") {
+		io.Copy(io.Discard, r.Body)
+		return
+	}
 	data, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)

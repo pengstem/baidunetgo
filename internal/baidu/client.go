@@ -109,7 +109,8 @@ func parseCookies(s string) map[string]string {
 // goroutine.
 type Client struct {
 	mu    sync.Mutex
-	token string // bdstoken, once asked for
+	token string   // bdstoken, once asked for
+	hosts []string // download hosts, fastest first
 
 	pcs   *baidupcs.BaiduPCS
 	http  *http.Client
