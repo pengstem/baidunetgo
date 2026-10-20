@@ -80,7 +80,6 @@ func (a *App) Attach(win *mygo.Window) {
 	a.store = openStore()
 	a.settings = loadSettings()
 	a.useSettings()
-	go endButtons() // reads the desktop's settings, off the first frame
 	a.boot()
 }
 

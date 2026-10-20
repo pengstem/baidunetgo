@@ -233,10 +233,12 @@ func (a *App) navRow(c *ui.Context, t *ui.Theme, p *palette, it navItem, on bool
 }
 
 // titleBar is the band at the top of the content, under the window
-// controls, which drags the window.
+// controls, which drags the window. It keeps clear of all of bar.Right:
+// on Linux that is a GTK header bar wider than its buttons, and its empty
+// part, though transparent, takes the clicks.
 func (a *App) titleBar(c *ui.Context, t *ui.Theme, p *palette) {
 	bar := c.TitleBar()
-	ui.Row(c).Height(max(bar.Height, titleBarMin)).PaddingStart(20).PaddingEnd(controlsRoom(bar) + 8).
+	ui.Row(c).Height(max(bar.Height, titleBarMin)).PaddingStart(20).PaddingEnd(bar.Right + 8).
 		AlignItems(ui.Center).Gap(10).DragWindow().Children(func() {
 		if dir := a.currentDir(); dir != "" {
 			a.filesToolbar(c, t, p, dir)
