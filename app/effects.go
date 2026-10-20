@@ -3,7 +3,6 @@ package app
 import (
 	_ "embed"
 	"hash/fnv"
-	"math"
 	"time"
 
 	"github.com/egoist/mygo/ui"
@@ -137,36 +136,6 @@ func (a *App) moving() bool {
 // since returns how far now is into a span of d from start, from 0 to 1.
 func since(now, start time.Time, d time.Duration) float32 {
 	return float32(min(max(float64(now.Sub(start))/float64(d), 0), 1))
-}
-
-// The shimmer's band runs down and across the window, along x + y/2 in
-// DIPs, shimmerSpeed DIPs of that a second, one every shimmerPeriod, its
-// brightness a bell shimmerWidth wide.
-const (
-	shimmerPeriod = 1100
-	shimmerSpeed  = 520
-	shimmerWidth  = 90
-)
-
-// drawShimmer fills r, rounded, as a placeholder, brightening as a band of
-// light sweeps by on a GPU, else plainly. The band runs across the window,
-// not each placeholder, so that all of them shimmer as one wave. Each is
-// one plain fill, which the window draws together: a shader or a gradient
-// apiece, as many as the placeholders showing, costs frames.
-func drawShimmer(p *ui.Painter, r ui.Rect, t *ui.Theme, radius float32) {
-	base := t.Background.Mix(t.Text, 0.07)
-	if !p.Accelerated() {
-		p.Fill(r, base, radius)
-		return
-	}
-	p.AnimationFrame()
-	u := r.X + r.W/2 + (r.Y+r.H/2)/2 // where its middle lies along the band's way
-	x := float32(math.Mod(float64(u-shaderClock(p.Now())*shimmerSpeed), shimmerPeriod))
-	if x < 0 {
-		x += shimmerPeriod
-	}
-	x = (x - shimmerPeriod/2) / shimmerWidth
-	p.Fill(r, base.Mix(t.Background.Mix(t.Text, 0.015), float32(math.Exp(float64(-x*x/2)))), radius)
 }
 
 // dropGlow is the ring around the browser while files are dragged over it,

@@ -85,6 +85,13 @@ func (a *App) searchPage(c *ui.Context, t *ui.Theme, p *palette, q string) {
 					if m.Item("显示详情").Chosen() {
 						a.showInfo(path.Dir(f.Path), []baidu.File{f})
 					}
+					m.Separator()
+					if m.Item("复制路径").Chosen() {
+						a.copy(f.Path, "已复制路径")
+					}
+					if kindOf(&f) == kindImage && m.Item("复制图片").Chosen() {
+						a.copyImage(f, nil)
+					}
 				})
 			})
 			list.Grow(1).Padding(4, 10, 20)

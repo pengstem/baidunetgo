@@ -233,27 +233,3 @@ func (g *gridState) scrollIntoView(i int, viewH float32) {
 		g.scroll.Y = top + gridPitch - viewH
 	}
 }
-
-// skeletonTiles shows placeholder tiles shimmering while a listing loads
-// in the grid, laid out as the grid lays its tiles, fading line by line.
-func (a *App) skeletonTiles(c *ui.Context, t *ui.Theme) {
-	cols := 4
-	if a.gridSize[0] > 0 {
-		cols = gridCols(a.gridSize[0])
-	}
-	ui.Column(c).Grow(1).Padding(gridPadTop, gridPadX, gridPadEnd).Clip().Children(func() {
-		for line := range 4 {
-			ui.Row(c).Height(gridPitch).Shrink(0).Opacity(1 - float32(line)*0.22).Children(func() {
-				for i := range cols {
-					ui.Column(c).WidthPercent(100/float32(cols)).Padding(tileInsetY, tileInsetX).Children(func() {
-						ui.Column(c).Grow(1).Padding(10).Gap(10).AlignItems(ui.Center).Children(func() {
-							ui.Box(c).Width(124).Height(112).Draw(func(p *ui.Painter, r ui.Rect) { drawShimmer(p, r, t, 8) })
-							w := float32(64 + (line*cols+i)*37%56)
-							ui.Box(c).Width(w).Height(10).Margin(4, 0, 0).Draw(func(p *ui.Painter, r ui.Rect) { drawShimmer(p, r, t, 5) })
-						})
-					})
-				}
-			})
-		}
-	})
-}

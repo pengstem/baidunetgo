@@ -66,6 +66,7 @@ type App struct {
 	copied        string // the toast after copying
 	query         string
 	copyText      string // to put on the clipboard in the next frame
+	copyPNG       []byte // the same, for a picture
 	settings      settings
 	pendingToasts []ui.Toast
 
@@ -102,6 +103,10 @@ func (a *App) Attach(win *mygo.Window) {
 
 // copy puts text on the clipboard in the next frame, saying msg.
 func (a *App) copy(text, msg string) { a.copyText, a.copied = text, msg }
+
+// copyPicture puts a PNG picture on the clipboard in the next frame,
+// saying msg.
+func (a *App) copyPicture(png []byte, msg string) { a.copyPNG, a.copied = png, msg }
 
 // Shutdown saves what must outlast the app, as it quits.
 func (a *App) Shutdown() {
@@ -164,13 +169,17 @@ func (a *App) View(c *ui.Context) {
 		a.previewOverlay(c, t, p)
 	}
 	a.toasts(c, t, p)
-	if a.copyText != "" {
-		c.WriteClipboard(a.copyText)
+	if a.copyText != "" || a.copyPNG != nil {
+		if a.copyText != "" {
+			c.WriteClipboard(a.copyText)
+		} else {
+			writePNG(c, a.copyPNG)
+		}
 		msg := a.copied
 		if msg == "" {
 			msg = "已复制"
 		}
 		a.toast(msg, "success")
-		a.copyText, a.copied = "", ""
+		a.copyText, a.copyPNG, a.copied = "", nil, ""
 	}
 }

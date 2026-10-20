@@ -3,6 +3,7 @@ package app
 import (
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 )
@@ -249,10 +250,11 @@ func skeletonRows(c *ui.Context, t *ui.Theme, p *palette) {
 			if i%2 == 1 {
 				row.Background(p.Stripe)
 			}
-			row.Opacity(1 - float32(i)*0.04)
+			pulse := row.Loop("pulse", 1400*time.Millisecond, ui.Bounce(ui.EaseInOut))
+			row.Opacity(0.55 + 0.45*pulse - float32(i)*0.03)
 			row.Children(func() {
-				ui.Box(c).Size(16, 16).Draw(func(p *ui.Painter, r ui.Rect) { drawShimmer(p, r, t, 4) })
-				ui.Box(c).Size(float32(140+(i*53)%160), 9).Draw(func(p *ui.Painter, r ui.Rect) { drawShimmer(p, r, t, 4) })
+				ui.Box(c).Size(16, 16).Radius(4).Background(p.Control)
+				ui.Box(c).Size(float32(140+(i*53)%160), 9).Radius(4).Background(p.Control)
 			})
 		}
 	})

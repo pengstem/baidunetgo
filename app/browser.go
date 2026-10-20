@@ -10,9 +10,17 @@ import (
 	"github.com/pengstem/baidunetgo/internal/baidu"
 )
 
+const rowHeight = 28
+
+// A folder's files come in one after another from the top as it first
+// shows, each popping up from a little below and a little smaller: the
+// rows rowStagger apart, the tiles tileStagger, over entranceFor each,
+// the first entranceMax staggered and the rest with the last of them.
 const (
-	rowHeight  = 28
-	entranceIn = 500 * time.Millisecond
+	rowStagger  = 28 * time.Millisecond
+	tileStagger = 45 * time.Millisecond
+	entranceFor = 340 * time.Millisecond
+	entranceMax = 24
 )
 
 // filesPage is the browser showing one directory.
@@ -39,10 +47,8 @@ func (a *App) filesPage(c *ui.Context, t *ui.Theme, p *palette, dir string) {
 		switch {
 		case !l.loaded && l.err != "":
 			emptyState(c, t, p, "triangle-alert", "无法读取这个文件夹", l.err, func() { a.load(l) })
-		case !l.loaded && a.gridView:
-			a.skeletonTiles(c, t)
 		case !l.loaded:
-			skeletonRows(c, t, p)
+			loadingHint(c, t)
 		case len(l.files) == 0:
 			emptyState(c, t, p, "folder-open", "这里还空着", "把文件拖进窗口即可上传", nil)
 		case a.gridView:
@@ -78,14 +84,24 @@ func (a *App) dropZone(c *ui.Context, t *ui.Theme, p *palette, dir string) {
 	})
 }
 
-// entering returns how far a row is into its entrance, 1 once in, for rows
-// that show as the listing first appears.
-func entering(e ui.Element, l *listing, i int, now time.Time) float32 {
-	if now.Sub(l.shown) > entranceIn {
+// entering returns how far the file at i is into its entrance, from 0 to
+// 1, the files after it waiting a stagger more; 1 for a listing shown a
+// while.
+func entering(e ui.Element, l *listing, i int, now time.Time, stagger time.Duration) float32 {
+	if now.Sub(l.shown) > entranceMax*stagger+entranceFor {
 		return 1
 	}
-	return e.Keyframes("in", []ui.Keyframe{{At: 0, Value: 0}, {At: 180 * time.Millisecond, Value: 1, Ease: easeStandard}},
-		ui.KeyframeOptions{Delay: time.Duration(min(i, 16)) * 12 * time.Millisecond})
+	return e.Keyframes("in", []ui.Keyframe{{At: 0, Value: 0}, {At: entranceFor, Value: 1, Ease: easeStandard}},
+		ui.KeyframeOptions{Delay: time.Duration(min(i, entranceMax)) * stagger})
+}
+
+// loadingHint shows a folder loading: nothing at first, as most load at
+// once, then a spinner fading in.
+func loadingHint(c *ui.Context, t *ui.Theme) {
+	ui.Column(c).Grow(1).Center().Children(func() {
+		s := ui.Spinner(c).Size(20, 20).TextColor(t.TextMuted).Label("加载中")
+		s.Opacity(s.Keyframes("show", []ui.Keyframe{{At: 0, Value: 0}, {At: 400 * time.Millisecond, Value: 0}, {At: 600 * time.Millisecond, Value: 1}}))
+	})
 }
 
 func (a *App) bindListState(l *listing) {
@@ -125,9 +141,8 @@ func (a *App) fileList(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 		default:
 			r.Background(t.Background) // opaque, over the list's own fill
 		}
-		in := entering(r, l, row.Index, now)
-		if in < 1 {
-			r.Opacity(in).Translate(0, (1-in)*4)
+		if in := entering(r, l, row.Index, now, rowStagger); in < 1 {
+			r.Opacity(in).Translate(0, (1-in)*10).Scale(0.97+0.03*in, 0.97+0.03*in)
 		}
 		r.Children(func() {
 			a.fileIcon(c, t, p, f, 18)
@@ -240,8 +255,8 @@ func (a *App) fileGrid(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 			fill = t.Background.Mix(t.Text, 0.05)
 		}
 		tile.Background(tile.AnimateColor("fill", fill, motionHover))
-		in := entering(tile, l, i, now)
-		tile.AnimatePose(ui.Pose{Y: (1 - in) * 4, Fade: 1 - in}, motionPanel)
+		in := entering(tile, l, i, now, tileStagger)
+		tile.AnimatePose(ui.Pose{Y: (1 - in) * 14, Scale: 0.9 + 0.1*in, Fade: 1 - in}, motionPanel)
 		tile.Children(func() {
 			box := ui.Box(c).Width(124).Height(112).Radius(8).Center().Clip()
 			k := kindOf(f)
@@ -259,8 +274,6 @@ func (a *App) fileGrid(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 						})
 					}
 				})
-			} else if a.thumbPending(f) {
-				box.Draw(func(p *ui.Painter, r ui.Rect) { drawShimmer(p, r, t, 8) })
 			} else {
 				box.Children(func() {
 					if k == kindFolder {
@@ -352,10 +365,6 @@ func (a *App) fileIcon(c *ui.Context, t *ui.Theme, p *palette, f *baidu.File, si
 				ui.Image(c, bmp).Fill().Fit(ui.Cover).
 					Transition(ui.ElementTransition{Enter: &ui.Motion{Opacity: 0}, Animation: &motionPanel, Match: thumbMatch{f.FsID}})
 			})
-			return
-		}
-		if a.thumbPending(f) {
-			ui.Box(c).Size(size, size).Draw(func(p *ui.Painter, r ui.Rect) { drawShimmer(p, r, t, 3) })
 			return
 		}
 	}
@@ -460,6 +469,9 @@ func (a *App) fileMenu(e ui.Element, l *listing, i int) {
 		}
 		if one && m.Item("复制路径").Chosen() {
 			a.copy(f.Path, "已复制路径")
+		}
+		if one && kindOf(&f) == kindImage && m.Item("复制图片").Chosen() {
+			a.copyImage(f, nil)
 		}
 		if m.Item("显示详情").Shortcut(ui.Cmd, ui.KeyI).Chosen() {
 			a.showInfo(l.dir, files)

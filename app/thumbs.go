@@ -117,16 +117,6 @@ func (a *App) thumb(f *baidu.File) *ui.Bitmap {
 	return nil
 }
 
-// thumbPending reports whether f's thumbnail is on its way, after thumb
-// has asked for it.
-func (a *App) thumbPending(f *baidu.File) bool {
-	if a.thumbs == nil || f.Thumb == "" {
-		return false
-	}
-	e := a.thumbs.entries[f.Thumb]
-	return e != nil && e.state == thumbQueued
-}
-
 // evict forgets the thumbnails shown longest ago.
 func (th *thumbs) evict() {
 	var oldest []string

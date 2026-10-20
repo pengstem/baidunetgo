@@ -45,6 +45,7 @@ type previewState struct {
 
 	thumb   *ui.Bitmap
 	bmp     *ui.Bitmap
+	data    []byte // the picture's file, to copy
 	zoom    float32
 	pan     ui.Point
 	dismiss ui.Point
@@ -177,7 +178,7 @@ func (a *App) loadPreview(pv *previewState) {
 					pv.err = "这种图片格式无法预览"
 					return
 				}
-				pv.bmp = bmp
+				pv.bmp, pv.data = bmp, data
 			})
 		case kindPDF:
 			doc, err := pdf.Open(ctx, data)
@@ -331,6 +332,20 @@ func (a *App) previewOverlay(c *ui.Context, t *ui.Theme, p *palette) {
 				if root.OverlayShortcut(0, ui.KeyRight) {
 					a.step(1)
 				}
+				if pv.bmp != nil {
+					if root.OverlayShortcut(ui.Cmd, ui.KeyC) {
+						a.copyImage(pv.file, pv.data)
+					}
+					if root.OverlayShortcut(ui.Cmd, ui.KeyEqual) {
+						pv.zoomBy(1.5)
+					}
+					if root.OverlayShortcut(ui.Cmd, ui.KeyMinus) {
+						pv.zoomBy(1 / 1.5)
+					}
+					if root.OverlayShortcut(ui.Cmd, ui.Key0) {
+						pv.zoomBy(0)
+					}
+				}
 			}
 		})
 	})
@@ -371,15 +386,20 @@ func (a *App) previewBar(c *ui.Context, t *ui.Theme, p *palette, pv *previewStat
 		ui.Spacer(c)
 		if pv.kind == kindImage && pv.bmp != nil {
 			if glassButton(c, "zoom-out", "缩小").Clicked() {
-				pv.zoom = max(pv.zoom/1.5, 1)
-				if pv.zoom == 1 {
-					pv.pan = ui.Point{}
-				}
+				pv.zoomBy(1 / 1.5)
 			}
 			ui.Text(c, itoa(int(pv.zoom*100+0.5))+"%").Width(48).TextAlign(ui.Center).FontFeatures("tnum").
 				TextColor(white.Alpha(0.75)).ContentTransition(ui.ContentTransition{Numeric: true})
 			if glassButton(c, "zoom-in", "放大").Clicked() {
-				pv.zoom = min(pv.zoom*1.5, 8)
+				pv.zoomBy(1.5)
+			}
+			if glassButton(c, "copy", "复制图片").Clicked() {
+				a.copyImage(pv.file, pv.data)
+			}
+		}
+		if pv.buf != nil {
+			if glassButton(c, "copy", "复制全文").Clicked() {
+				a.copy(pv.buf.String(), "已复制全文")
 			}
 		}
 		if pv.kind == kindMarkdown && pv.buf != nil {
@@ -406,6 +426,15 @@ func (a *App) previewBar(c *ui.Context, t *ui.Theme, p *palette, pv *previewStat
 			a.closePreview()
 		}
 	})
+}
+
+// zoomBy zooms the picture by f, within 1 to 8 times; 0 fits it to the
+// window again.
+func (pv *previewState) zoomBy(f float32) {
+	pv.zoom = clamp(pv.zoom*f, 1, 8)
+	if pv.zoom == 1 {
+		pv.pan = ui.Point{}
+	}
 }
 
 // glassButton is a round icon button over the dark preview backdrop.
@@ -545,6 +574,9 @@ func (a *App) imageViewer(c *ui.Context, t *ui.Theme, p *palette, pv *previewSta
 				return
 			}
 		}
+		if pv.bmp != nil {
+			a.imageMenu(img, pv)
+		}
 		if img.DoubleClicked() {
 			if pv.zoom > 1 {
 				pv.zoom, pv.pan = 1, ui.Point{}
@@ -573,6 +605,32 @@ func (a *App) imageViewer(c *ui.Context, t *ui.Theme, p *palette, pv *previewSta
 			}
 		}
 	}
+}
+
+// imageMenu gives the picture its context menu.
+func (a *App) imageMenu(img ui.Element, pv *previewState) {
+	img.ContextMenu(func(m *ui.Menu) {
+		if m.Item("复制图片").Shortcut(ui.Cmd, ui.KeyC).Chosen() {
+			a.copyImage(pv.file, pv.data)
+		}
+		if m.Item("复制路径").Chosen() {
+			a.copy(pv.file.Path, "已复制路径")
+		}
+		m.Separator()
+		if m.Item("放大").Shortcut(ui.Cmd, ui.KeyEqual).Chosen() {
+			pv.zoomBy(1.5)
+		}
+		if m.Item("缩小").Shortcut(ui.Cmd, ui.KeyMinus).Chosen() {
+			pv.zoomBy(1 / 1.5)
+		}
+		if pv.zoom > 1 && m.Item("适合窗口").Shortcut(ui.Cmd, ui.Key0).Chosen() {
+			pv.zoomBy(0)
+		}
+		m.Separator()
+		if m.Item("下载").Chosen() {
+			a.download([]baidu.File{pv.file})
+		}
+	})
 }
 
 // textViewer shows text and code, read-only with highlighting, and
