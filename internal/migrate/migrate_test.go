@@ -1,6 +1,7 @@
 package migrate
 
 import (
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -14,7 +15,12 @@ func TestReadNetdisk(t *testing.T) {
 		t.Fatal(err)
 	}
 	cr := acc.Creds
-	if cr.BDUSS != "pan-bduss" || cr.STOKEN != "pan-stoken" {
+	// Only Linux opens v10 values: elsewhere the key is in a keyring.
+	stoken := ""
+	if runtime.GOOS == "linux" {
+		stoken = "pan-stoken"
+	}
+	if cr.BDUSS != "pan-bduss" || cr.STOKEN != stoken {
 		t.Errorf("BDUSS %q, STOKEN %q", cr.BDUSS, cr.STOKEN)
 	}
 	if !strings.Contains(cr.Cookies, "PANPSC="+strings.Repeat("p", 5000)) || !strings.Contains(cr.Cookies, "BAIDUID=id") {
