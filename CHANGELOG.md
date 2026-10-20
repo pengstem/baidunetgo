@@ -4,6 +4,13 @@
 
 <!-- 写在这里的内容会成为下一个版本的更新说明；留空则按提交记录自动生成。 -->
 
+## [0.4.2] - 2026-10-20
+
+### 改进
+
+- Delete at once, with no question first, as Finder moves to the trash: the dialog hid the rows dissolving, and the toast still offers to undo it, from the recycle bin; delete apart from the dialogs, which it no longer closes, and keep toasts shorter, 4 s for undoing and 2.5 s for a transfer begun
+- Show placeholder tiles while a folder loads in the grid, laid out as its tiles are and shimmering, instead of the list's striped rows
+
 ## [0.4.1] - 2026-10-20
 
 ### 改进
