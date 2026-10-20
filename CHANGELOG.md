@@ -4,6 +4,12 @@
 
 <!-- 写在这里的内容会成为下一个版本的更新说明；留空则按提交记录自动生成。 -->
 
+## [0.4.6] - 2026-10-20
+
+### 改进
+
+- Keep thumbnails through a folder read again: the cache was keyed by the thumbnail URL, which the netdisk signs afresh with every listing, so deleting one picture refetched and redrew all the others; it is now keyed by the file's fs_id, mtime and size, fakepan signs its thumbnail URLs per listing the same way, and a test deletes a picture and checks the rest keep theirs
+
 ## [0.4.5] - 2026-10-20
 
 ### 改进
