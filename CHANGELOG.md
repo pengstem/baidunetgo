@@ -4,6 +4,12 @@
 
 <!-- 写在这里的内容会成为下一个版本的更新说明；留空则按提交记录自动生成。 -->
 
+## [0.3.0] - 2026-10-20
+
+### 改进
+
+- Tie the app to the system: a second launch brings the running window forward instead of running the same transfers into the same files, the Dock icon counts the transfers going and shows their progress, the computer stays awake while they run, a finished download's notification shows the file in its folder and an upload's opens its netdisk folder, and transfers wait queued while the computer is offline or asleep, going on where they were once it is back
+
 ## [0.2.0] - 2026-10-20
 
 ### 改进
