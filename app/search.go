@@ -108,6 +108,9 @@ func (a *App) searchField(c *ui.Context, t *ui.Theme, p *palette) {
 	f := ui.SearchField(c.Key("search"), &a.query).Label("搜索网盘").Placeholder("搜索").Height(28).Radius(14).
 		Background(p.Control).Border(0, ui.Transparent)
 	w := float32(170)
+	if a.compact {
+		w = 120
+	}
 	if f.FocusWithin() || a.query != "" {
 		w = 240
 	}

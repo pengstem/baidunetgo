@@ -436,7 +436,10 @@ func (a *App) transfersToolbar(c *ui.Context, t *ui.Theme, p *palette) {
 			going++
 		}
 	}
-	segmented(c, t, p, &a.transfers.tab, "进行中 "+itoa(going), "已完成 "+itoa(done)).Width(190).Label("传输")
+	tabs := choice(c, t, p, &a.transfers.tab, a.compact, "进行中 "+itoa(going), "已完成 "+itoa(done)).Label("传输")
+	if !a.compact {
+		tabs.Width(190)
+	}
 	if a.activeTransfers() > 0 {
 		if pill(c, t, p, "", "全部暂停", false).Clicked() {
 			m.PauseAll()

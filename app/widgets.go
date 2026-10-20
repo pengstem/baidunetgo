@@ -128,6 +128,45 @@ func segmented(c *ui.Context, t *ui.Theme, p *palette, chosen *int, labels ...st
 	})
 }
 
+// choice is a segmented capsule of labels, folded into a pop-up button
+// when compact, as Pulse's toolbars fold theirs in a narrow window.
+func choice(c *ui.Context, t *ui.Theme, p *palette, chosen *int, compact bool, labels ...string) ui.Element {
+	if compact {
+		return popUp(c, t, p, chosen, labels, nil)
+	}
+	return segmented(c, t, p, chosen, labels...)
+}
+
+// popUp is a pop-up button of choices, as AppKit's: the one chosen, its
+// icon when icons are given, else its label, over stacked chevrons,
+// opening a menu of them all with the chosen one checked.
+func popUp(c *ui.Context, t *ui.Theme, p *palette, chosen *int, labels, icons []string) ui.Element {
+	b := ui.ButtonBase(c).Label(labels[*chosen]).Height(28).PaddingStart(10).PaddingEnd(7).Radius(14).Gap(4).AlignItems(ui.Center).Shrink(0)
+	bg := p.Control
+	if b.Pressed() {
+		bg = t.SurfacePressed
+	} else if b.Hovered() {
+		bg = t.SurfaceHover
+	}
+	b.Background(b.AnimateColor("bg", bg, motionHover))
+	b.Children(func() {
+		if icons != nil {
+			ui.Icon(c, icon(icons[*chosen])).FontSize(14)
+		} else {
+			ui.Text(c, labels[*chosen]).FontSize(12).FontWeight(500).SingleLine().FontFeatures("tnum")
+		}
+		ui.Icon(c, icon("chevrons-up-down")).FontSize(11).TextColor(t.TextMuted)
+	})
+	b.Menu(func(m *ui.Menu) {
+		for i, l := range labels {
+			if m.Item(l).Checked(i == *chosen).Chosen() {
+				*chosen = i
+			}
+		}
+	})
+	return b
+}
+
 // segmentedOf is a segmented capsule whose segments build sets up.
 func segmentedOf(c *ui.Context, t *ui.Theme, p *palette, chosen *int, n int, build func(i int, s ui.Element)) ui.Element {
 	seg := ui.SegmentedBase(c, chosen, n)

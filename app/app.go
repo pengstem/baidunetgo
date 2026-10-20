@@ -64,6 +64,7 @@ type App struct {
 	pendingToasts []ui.Toast
 
 	sidebarCollapsed bool
+	compact          bool // the title bar is narrow: choices fold into pop-up buttons
 	profileOpen      bool
 	navAt            string // the sidebar page shown, to notice a change
 	navRun           uint64 // counts changes, to replay the icon's gesture

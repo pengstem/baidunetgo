@@ -31,6 +31,9 @@ const (
 	navGap       = 2
 	navHeader    = 30 // a section's title over its rows
 	titleBarMin  = 52
+	// compactBar is the title bar's width under which its choices fold
+	// into pop-up buttons.
+	compactBar = 720
 )
 
 // barHeight is how tall the title bar is: as tall as the window says, so
@@ -245,8 +248,14 @@ func (a *App) navValue(page string) string {
 // its buttons, and its empty part, though transparent, takes the clicks.
 func (a *App) titleBar(c *ui.Context, t *ui.Theme, p *palette, left float32) {
 	bar := c.TitleBar()
-	ui.Row(c).Height(barHeight(c)).Shrink(0).PaddingStart(left).PaddingEnd(bar.Right + 14).
-		AlignItems(ui.Center).Gap(8).DragWindow().Children(func() {
+	row := ui.Row(c).Height(barHeight(c)).Shrink(0).PaddingStart(left).PaddingEnd(bar.Right + 14).
+		AlignItems(ui.Center).Gap(8).DragWindow()
+	// As wide as the pane, whatever it holds, so last frame's width tells
+	// whether the tools fit.
+	if w := row.Bounds().W; w > 0 {
+		a.compact = w < compactBar
+	}
+	row.Children(func() {
 		if dir := a.currentDir(); dir != "" {
 			a.filesToolbar(c, t, p, dir)
 			return

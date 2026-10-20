@@ -493,6 +493,9 @@ func (a *App) filesToolbar(c *ui.Context, t *ui.Theme, p *palette, dir string) {
 	a.breadcrumbs(c, t, p, dir)
 	ui.Spacer(c)
 	a.searchField(c, t, p)
+	if a.gridView {
+		a.sortMenu(c, t, p)
+	}
 	a.viewSwitch(c, t, p)
 	if toolButton(c, t, p, "folder-plus", "新建文件夹").Clicked() {
 		a.ask(dlgNewFolder, dir, nil)
@@ -505,16 +508,43 @@ func (a *App) filesToolbar(c *ui.Context, t *ui.Theme, p *palette, dir string) {
 	}
 }
 
+// sortOrders are what the browser sorts by, as the list's columns.
+var sortOrders = []struct{ by, label string }{{"name", "名称"}, {"size", "大小"}, {"time", "修改日期"}}
+
+// sortMenu is the grid's button choosing the order, which the list
+// chooses by its columns: what to sort by, then which way.
+func (a *App) sortMenu(c *ui.Context, t *ui.Theme, p *palette) {
+	toolButton(c, t, p, "arrow-down-wide-narrow", "排序方式").Menu(func(m *ui.Menu) {
+		for _, o := range sortOrders {
+			if m.Item(o.label).Checked(a.order.By == o.by).Chosen() && a.order.By != o.by {
+				a.order = baidu.Order{By: o.by, Desc: o.by != "name"}
+			}
+		}
+		m.Separator()
+		if m.Item("升序").Checked(!a.order.Desc).Chosen() {
+			a.order.Desc = false
+		}
+		if m.Item("降序").Checked(a.order.Desc).Chosen() {
+			a.order.Desc = true
+		}
+	})
+}
+
 // viewSwitch toggles between the list and the grid.
 func (a *App) viewSwitch(c *ui.Context, t *ui.Theme, p *palette) {
 	chosen := 0
 	if a.gridView {
 		chosen = 1
 	}
-	segmentedOf(c, t, p, &chosen, 2, func(i int, s ui.Element) {
-		s.Width(34).Label([]string{"列表", "网格"}[i])
-		s.Children(func() { ui.Icon(c, icon([]string{"list", "layout-grid"}[i])).FontSize(14) })
-	}).Label("视图")
+	labels, icons := []string{"列表", "网格"}, []string{"list", "layout-grid"}
+	if a.compact {
+		popUp(c, t, p, &chosen, labels, icons).Label("视图")
+	} else {
+		segmentedOf(c, t, p, &chosen, 2, func(i int, s ui.Element) {
+			s.Width(34).Label(labels[i])
+			s.Children(func() { ui.Icon(c, icon(icons[i])).FontSize(14) })
+		}).Label("视图")
+	}
 	a.gridView = chosen == 1
 }
 
