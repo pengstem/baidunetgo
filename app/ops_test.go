@@ -54,10 +54,11 @@ func TestDeleteUndoAndRecycle(t *testing.T) {
 	if !tt.HasText("已选 1 项") {
 		t.Fatalf("selection bar missing: %q", tt.Texts())
 	}
+	// Delete goes at once, with no question: it can be undone.
 	tt.Key(0, ui.KeyDelete)
-	tt.Advance(300 * time.Millisecond)
-	save(t, tt, "dialog-delete")
-	tt.Key(0, ui.KeyEnter)
+	if a.dlg.open {
+		t.Fatal("delete asks first")
+	}
 	settle(tt)
 	if srv.Exists("/安装包.dmg") {
 		t.Fatal("not deleted")
@@ -71,9 +72,7 @@ func TestDeleteUndoAndRecycle(t *testing.T) {
 	}
 
 	// Delete again and restore from the recycle bin page.
-	a.ask(dlgDelete, "/", []baidu.File{fileNamed(t, a, "/", "安装包.dmg")})
-	tt.Advance(200 * time.Millisecond)
-	tt.Key(0, ui.KeyEnter)
+	a.remove("/", []baidu.File{fileNamed(t, a, "/", "安装包.dmg")})
 	settle(tt)
 	a.router.Push("/recycle")
 	waitFor(t, tt, "安装包.dmg")

@@ -7,6 +7,13 @@ import (
 	"github.com/egoist/mygo/ui/markdown"
 )
 
+// How long toasts show: one offering to undo long enough to reach it,
+// one telling what began only a moment.
+const (
+	undoToast  = 4 * time.Second
+	briefToast = 2500 * time.Millisecond
+)
+
 // toast shows a message at the bottom of the window. It runs on the UI
 // thread, from the view or an update.
 func (a *App) toast(msg, kind string) {

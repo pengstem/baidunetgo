@@ -90,7 +90,7 @@ func (a *App) download(files []baidu.File) {
 	}
 	a.xfer.AddDownloads(files, a.settings.downloadDir())
 	a.pendingToasts = append(a.pendingToasts, ui.Toast{
-		Title: "已加入下载：" + countLabel(files), Type: "success", Action: "查看",
+		Title: "已加入下载：" + countLabel(files), Type: "success", Action: "查看", Timeout: briefToast,
 		OnAction: func() { a.router.Push("/transfers") },
 	})
 }
@@ -106,7 +106,7 @@ func (a *App) upload(locals []string, dir string) {
 		n = "「" + filepath.Base(locals[0]) + "」"
 	}
 	a.pendingToasts = append(a.pendingToasts, ui.Toast{
-		Title: "正在上传" + n + "到「" + dirLabel(dir) + "」", Type: "success", Action: "查看",
+		Title: "正在上传" + n + "到「" + dirLabel(dir) + "」", Type: "success", Action: "查看", Timeout: briefToast,
 		OnAction: func() { a.router.Push("/transfers") },
 	})
 }

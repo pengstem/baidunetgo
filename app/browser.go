@@ -466,7 +466,7 @@ func (a *App) fileMenu(e ui.Element, l *listing, i int) {
 		}
 		m.Separator()
 		if m.Item("删除").Shortcut(0, ui.KeyDelete).Chosen() {
-			a.ask(dlgDelete, l.dir, files)
+			a.remove(l.dir, files)
 		}
 	})
 }

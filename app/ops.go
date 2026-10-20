@@ -4,7 +4,6 @@ import (
 	"context"
 	"path"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"github.com/egoist/mygo/ui"
@@ -19,7 +18,6 @@ const (
 	dlgNone dialogKind = iota
 	dlgNewFolder
 	dlgRename
-	dlgDelete
 	dlgMove
 	dlgCopy
 	dlgShare
@@ -113,8 +111,15 @@ func countLabel(files []baidu.File) string {
 	return itoa(len(files)) + " 项"
 }
 
-// remove deletes files, offering to undo it from the recycle bin.
+// remove moves files to the recycle bin at once, as Finder does, with no
+// question first: they dissolve where they are, and a toast offers to
+// undo it. It works apart from the dialogs (a.run), which another dialog
+// opened meanwhile could be closed by.
 func (a *App) remove(dir string, files []baidu.File) {
+	s := a.sess
+	if s == nil || len(files) == 0 {
+		return
+	}
 	ids := make([]int64, len(files))
 	for i, f := range files {
 		ids[i] = f.FsID
@@ -124,25 +129,25 @@ func (a *App) remove(dir string, files []baidu.File) {
 		a.dissolve(l, ids)
 		l.sel.Clear()
 	}
-	a.run(func(ctx context.Context, c *baidu.Client) error {
-		err := c.Delete(ctx, paths(files))
-		if err != nil {
-			a.update(func() {
+	go func() {
+		err := s.client.Delete(context.Background(), paths(files))
+		a.update(func() {
+			a.reload(dir)
+			if err != nil {
 				a.spare(ids)
-				a.reload(dir)
+				a.toast(err.Error(), "error")
+				return
+			}
+			a.pendingToasts = append(a.pendingToasts, ui.Toast{
+				Title: "已将" + countLabel(files) + "移到回收站", Type: "success", Action: "撤销", Timeout: undoToast,
+				OnAction: func() {
+					a.spare(ids)
+					a.run(func(ctx context.Context, c *baidu.Client) error { return c.Restore(ctx, ids) }, []string{dir}, "已还原", nil)
+				},
 			})
-		}
-		return err
-	}, []string{dir}, "", func() {
-		a.pendingToasts = append(a.pendingToasts, ui.Toast{
-			Title: "已删除 " + countLabel(files), Type: "success", Action: "撤销", Timeout: 7 * time.Second,
-			OnAction: func() {
-				a.spare(ids)
-				a.run(func(ctx context.Context, c *baidu.Client) error { return c.Restore(ctx, ids) }, []string{dir}, "已还原", nil)
-			},
+			a.recycleDirty = true
 		})
-		a.recycleDirty = true
-	})
+	}()
 }
 
 // dialogs builds the dialog open, if any.
@@ -161,8 +166,6 @@ func (a *App) dialogs(c *ui.Context, t *ui.Theme, p *palette) {
 			a.nameDialog(c, t, p, "新建文件夹", "在「"+dirLabel(d.dir)+"」中", "创建")
 		case dlgRename:
 			a.nameDialog(c, t, p, "重命名", d.files[0].Name, "重命名")
-		case dlgDelete:
-			a.deleteDialog(c, t, p)
 		case dlgMove, dlgCopy:
 			a.pickerDialog(c, t, p)
 		case dlgShare:
@@ -209,7 +212,7 @@ func (a *App) dialogButtons(c *ui.Context, t *ui.Theme, p *palette, label string
 			d.open = false
 		}
 		b := pill(c, t, p, "", label, true).Disabled(disabled || d.busy)
-		if d.kind == dlgDelete || d.kind == dlgMove || d.kind == dlgCopy || d.kind == dlgShare {
+		if d.kind == dlgMove || d.kind == dlgCopy || d.kind == dlgShare {
 			b.AutoFocus() // Enter presses it
 		}
 		if danger {
@@ -259,21 +262,6 @@ func (a *App) nameDialog(c *ui.Context, t *ui.Theme, p *palette, title, detail, 
 	}
 }
 
-func (a *App) deleteDialog(c *ui.Context, t *ui.Theme, p *palette) {
-	d := &a.dlg
-	ui.Row(c).Gap(14).AlignItems(ui.Start).Children(func() {
-		ui.Icon(c, icon("trash-2")).FontSize(18).TextColor(t.Danger).Margin(2, 0, 0)
-		ui.Column(c).Grow(1).Shrink(1).Children(func() {
-			dialogTitle(c, t, "删除"+countLabel(d.files)+"？", "")
-			ui.Text(c, "文件会移到回收站，保留一段时间后自动清除。").TextColor(t.TextMuted).Margin(4, 0, 0)
-		})
-	})
-	if a.dialogButtons(c, t, p, "删除", true, false) {
-		d.open = false
-		a.remove(d.dir, d.files)
-	}
-}
-
 // fileActions handles the browser's keys on the files chosen.
 func (a *App) fileActions(c *ui.Context, l *listing) {
 	if a.dlg.open || a.pv != nil {
@@ -293,7 +281,7 @@ func (a *App) fileActions(c *ui.Context, l *listing) {
 		a.ask(dlgRename, l.dir, files)
 	}
 	if c.Shortcut(0, ui.KeyDelete) || c.Shortcut(ui.Cmd, ui.KeyBackspace) {
-		a.ask(dlgDelete, l.dir, files)
+		a.remove(l.dir, files)
 	}
 	if c.Shortcut(ui.Cmd, ui.KeyI) {
 		a.showInfo(l.dir, files)
@@ -355,7 +343,7 @@ func (a *App) selectionBar(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 			ui.Text(c, "删除")
 		})
 		if del.Clicked() {
-			a.ask(dlgDelete, l.dir, files)
+			a.remove(l.dir, files)
 		}
 		ui.Divider(c).Height(20).Margin(0, 4)
 		if iconButton(c, t, p, "x", "取消选择").Clicked() {
