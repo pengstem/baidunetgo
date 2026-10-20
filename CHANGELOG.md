@@ -4,6 +4,14 @@
 
 <!-- 写在这里的内容会成为下一个版本的更新说明；留空则按提交记录自动生成。 -->
 
+## [0.2.0] - 2026-10-20
+
+### 改进
+
+- Show a file's or folder's details, from its context menu, the selection bar or Cmd-I: kind, size in bytes, place, times and MD5, and for a folder what it holds
+- Sort the grid view from a menu in the title bar, by name, size or date and either way, as the list sorts by its columns; and in a narrow window fold the title bar's segmented choices into pop-up buttons, as Pulse does, with a narrower search field
+- Settings drop the icon tile on every row, show the account's profile photo (fetched all along but never drawn) there and in the sidebar, and center the digits of the number fields, which the input left low: it centers a line only in a box taller than it
+
 ## [0.1.1] - 2026-10-20
 
 ### 改进
