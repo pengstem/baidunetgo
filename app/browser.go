@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/egoist/mygo/plugins/loading"
 	"github.com/egoist/mygo/ui"
 
 	"github.com/pengstem/baidunetgo/internal/baidu"
@@ -99,7 +100,7 @@ func entering(e ui.Element, l *listing, i int, now time.Time, stagger time.Durat
 // once, then a spinner fading in.
 func loadingHint(c *ui.Context, t *ui.Theme) {
 	ui.Column(c).Grow(1).Center().Children(func() {
-		s := ui.Spinner(c).Size(20, 20).TextColor(t.TextMuted).Label("加载中")
+		s := loading.Ring(c, loading.Options{Size: 20, Color: t.TextMuted, Easing: loading.EaseInOut}).Label("加载中")
 		s.Opacity(s.Keyframes("show", []ui.Keyframe{{At: 0, Value: 0}, {At: 400 * time.Millisecond, Value: 0}, {At: 600 * time.Millisecond, Value: 1}}))
 	})
 }

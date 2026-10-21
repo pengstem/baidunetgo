@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/egoist/mygo/plugins/loading"
 	"github.com/egoist/mygo/ui"
 
 	"github.com/pengstem/baidunetgo/internal/remote"
@@ -225,7 +226,8 @@ func (a *App) tuneResult(c *ui.Context, t *ui.Theme, p *palette, cfg tune.Config
 			}
 			b := pill(c, t, p, "", "重测", false).Disabled(a.tuning)
 			if a.tuning {
-				b.Children(func() { ui.Spinner(c) })
+				// A radar sweeps while the hosts and settings are measured.
+				b.Children(func() { loading.Radar(c, loading.Options{Size: 14, Color: t.Accent}).Label("测速中") })
 			}
 			if b.Clicked() {
 				a.runTune(true)
