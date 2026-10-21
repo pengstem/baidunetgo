@@ -4,6 +4,12 @@
 
 <!-- 写在这里的内容会成为下一个版本的更新说明；留空则按提交记录自动生成。 -->
 
+## [0.4.8] - 2026-10-21
+
+### 改进
+
+- Use MyGo 0.6's loading.dev indicators for the waits that fill a page or stand for a task: a Pulse in the accent on the boot screen, a Ring while a folder loads, a Radar on the speed test's button; the small waits in buttons, rows and dialogs keep AppKit's spinner, which suits the native look
+
 ## [0.4.7] - 2026-10-21
 
 ### 新增
