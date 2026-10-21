@@ -4,6 +4,18 @@
 
 <!-- 写在这里的内容会成为下一个版本的更新说明；留空则按提交记录自动生成。 -->
 
+## [0.4.7] - 2026-10-21
+
+### 新增
+
+- Add the software engineering course materials under docs/course: requirements, design, project management, how the app was built with AI and what we learned, and the talk's script, with the code size, tests and history taken from the repository
+
+### 改进
+
+- Choose files by dragging over their rows, as in Finder, with MyGo 0.6's DragSelect (a right-click on a row not chosen now chooses it first, so its menu acts on it), line the speed card's unit up with its figure by baseline instead of a hand-tuned margin, and test dropping a file from Finder with Tester.DropFiles
+- Upgrade MyGo to v0.6.0: it redraws only what changed, lays out again only what changed, folds translations out of the general GPU path, and adds the drag select, right-click choosing, row double clicks and Tester.DropFiles the next commits use
+- Bring the README up to date: screenshots taken again in the macOS look (the old ones showed the first dark design), and the features added since the release workflow, sign-in migration, auto tuning, the system integration, file details and copying pictures, the specks, the debug variables and the newer packages
+
 ## [0.4.6] - 2026-10-20
 
 ### 改进
