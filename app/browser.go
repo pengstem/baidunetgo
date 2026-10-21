@@ -110,6 +110,7 @@ func (a *App) bindListState(l *listing) {
 	l.list.Label = func(i int) string { return files[i].Name }
 	l.list.Selected = &l.selected
 	l.list.Selection = &l.sel
+	l.list.DragSelect = true // a drag over the rows chooses them, as in Finder
 }
 
 func (a *App) fileList(c *ui.Context, t *ui.Theme, p *palette, l *listing) {

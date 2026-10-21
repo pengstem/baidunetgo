@@ -56,6 +56,27 @@ func TestDownloadAndUploadPage(t *testing.T) {
 	save(t, tt, "transfers")
 }
 
+// TestDropUploads drops a file from Finder on a folder's page, which
+// uploads it there.
+func TestDropUploads(t *testing.T) {
+	a, tt, srv := signedIn(t)
+	a.router.Push(filesRoute("/照片"))
+	waitFor(t, tt, "IMG_2310.jpg")
+	local := filepath.Join(t.TempDir(), "拖进来.png")
+	os.WriteFile(local, []byte("png"), 0o644)
+	if !tt.DropFiles(700, 400, local) {
+		t.Fatal("the page did not take the drop")
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for srv.Data("/照片/拖进来.png") == nil {
+		if time.Now().After(deadline) {
+			t.Fatalf("upload never arrived: %+v", a.transfers.tasks)
+		}
+		time.Sleep(20 * time.Millisecond)
+		tt.Advance(50 * time.Millisecond)
+	}
+}
+
 func TestSpeedCard(t *testing.T) {
 	a, tt, _ := signedIn(t)
 	a.transfers.tasks = []transfer.Task{

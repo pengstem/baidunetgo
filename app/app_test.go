@@ -89,6 +89,34 @@ func TestSortByHeader(t *testing.T) {
 	}
 }
 
+// TestDragSelect drags over the rows, which chooses them, then
+// right-clicks a row not chosen, which chooses it alone before its menu
+// opens, so the menu acts on it.
+func TestDragSelect(t *testing.T) {
+	a, tt, _ := signedIn(t)
+	l := a.listings["/"]
+	from, _ := tt.Find(l.files[0].Name)
+	to, _ := tt.Find(l.files[2].Name)
+	tt.Press(from.X+5, from.Y+5)
+	for y := from.Y + 5; y < to.Y+5; y += 6 {
+		tt.Move(from.X+5, y)
+		tt.Frame()
+	}
+	tt.Release(from.X+5, to.Y+5)
+	tt.Frame()
+	if l.sel.Len() != 3 || !l.sel.Has(l.files[0].FsID) || !l.sel.Has(l.files[2].FsID) {
+		t.Fatalf("drag chose %d", l.sel.Len())
+	}
+	if err := tt.RightClick(l.files[4].Name); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if l.sel.Len() != 1 || !l.sel.Has(l.files[4].FsID) || len(tt.Menu()) == 0 {
+		t.Errorf("right-click chose %d, menu %q", l.sel.Len(), tt.Menu())
+	}
+	tt.CloseMenu()
+}
+
 func TestRoutes(t *testing.T) {
 	for _, dir := range []string{"/", "/照片", "/a b/50% off?#", "/文档/旅行 计划"} {
 		got := filesRoute(dir)

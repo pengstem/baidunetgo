@@ -234,14 +234,14 @@ func (a *App) speedCard(c *ui.Context, t *ui.Theme, p *palette) {
 		ui.Row(c).Gap(36).AlignItems(ui.End).Children(func() {
 			ui.Column(c).Gap(2).Children(func() {
 				ui.Text(c, "当前速度").FontSize(12).TextColor(t.TextMuted)
-				ui.Row(c).Gap(5).AlignItems(ui.End).Children(func() {
+				ui.Row(c).Gap(5).AlignItems(ui.Baseline).Children(func() {
 					n, unit := "0", "B/s"
 					if speed > 0 {
 						v, u, _ := strings.Cut(humanSpeed(speed), " ")
 						n, unit = v, u
 					}
 					figure(c, n).FontSize(36).FontWeight(700).ContentTransition(ui.ContentTransition{Numeric: true})
-					ui.Text(c, unit).FontSize(16).FontWeight(600).TextColor(t.TextMuted).Margin(0, 0, 6)
+					ui.Text(c, unit).FontSize(16).FontWeight(600).TextColor(t.TextMuted)
 				})
 			})
 			stat := func(label, value string) {
