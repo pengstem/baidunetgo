@@ -506,7 +506,7 @@ func (a *App) breadcrumbs(c *ui.Context, t *ui.Theme, p *palette, dir string) {
 					ui.Icon(c, icon("chevron-right")).FontSize(12).TextColor(p.Faint)
 				}
 				if i == 1 && start > 1 {
-					ui.Text(c, "…").TextColor(t.TextMuted).PaddingX(3)
+					ui.Text(c, "…").TextColor(t.TextMuted).PaddingX(3).Tooltip(strings.Join(parts[1:start], " / "))
 					ui.Icon(c, icon("chevron-right")).FontSize(12).TextColor(p.Faint)
 				}
 				label := parts[i]
@@ -514,7 +514,13 @@ func (a *App) breadcrumbs(c *ui.Context, t *ui.Theme, p *palette, dir string) {
 					label = "我的文件"
 				}
 				last := i == len(parts)-1
-				crumb := ui.ButtonBase(c.Key(i)).Label(label).PaddingX(3).Radius(4).Shrink(1).FontSize(14).
+				// The tip tells the whole path, as the crumbs shorten long
+				// names and fold the middle of a deep one into "…".
+				tip := "我的文件"
+				if i > 0 {
+					tip += " / " + strings.Join(parts[1:i+1], " / ")
+				}
+				crumb := ui.ButtonBase(c.Key(i)).Label(label).Tooltip(tip).PaddingX(3).Radius(4).Shrink(1).FontSize(14).
 					Transition(ui.ElementTransition{Animation: &motionPanel, Enter: &ui.Motion{X: 6, Opacity: 0}, Exit: &ui.Motion{Opacity: 0}})
 				if last {
 					crumb.FontWeight(700)
@@ -531,7 +537,8 @@ func (a *App) breadcrumbs(c *ui.Context, t *ui.Theme, p *palette, dir string) {
 				}
 			}
 		})
-		ui.Text(c, filesSubtitle(a.listingFor(dir))).FontSize(11).PaddingX(3).TextColor(t.TextMuted).SingleLine().FontFeatures("tnum")
+		sub := filesSubtitle(a.listingFor(dir))
+		ui.Text(c, sub).Tooltip(sub).FontSize(11).PaddingX(3).TextColor(t.TextMuted).SingleLine().FontFeatures("tnum")
 	})
 }
 

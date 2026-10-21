@@ -67,6 +67,34 @@ func TestBrowse(t *testing.T) {
 	}
 }
 
+// TestBreadcrumbTips tells the whole path when the pointer rests on a
+// breadcrumb, and the whole summary on the line under it, which a narrow
+// window cuts short.
+func TestBreadcrumbTips(t *testing.T) {
+	a, tt, _ := signedIn(t)
+	a.router.Push(filesRoute("/照片"))
+	waitFor(t, tt, "IMG_2310.jpg")
+	rest := func(s string) {
+		t.Helper()
+		r, ok := tt.Find(s)
+		if !ok {
+			t.Fatalf("no %q", s)
+		}
+		tt.Move(r.X+r.W/2, r.Y+r.H/2)
+		tt.Advance(time.Second)
+	}
+	rest("照片")
+	save(t, tt, "breadcrumb-tip")
+	if !tt.HasText("我的文件 / 照片") {
+		t.Errorf("no path tip: %q", tt.Texts())
+	}
+	sub := filesSubtitle(a.listingFor("/照片"))
+	rest(sub)
+	if n := strings.Count(strings.Join(tt.Texts(), "\n"), sub); n != 2 {
+		t.Errorf("summary shows %d times, want it in a tip too", n)
+	}
+}
+
 func TestSortByHeader(t *testing.T) {
 	a, tt, _ := signedIn(t)
 	if err := tt.Click("按大小排序"); err != nil {
