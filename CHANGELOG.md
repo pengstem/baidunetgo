@@ -4,6 +4,12 @@
 
 <!-- 写在这里的内容会成为下一个版本的更新说明；留空则按提交记录自动生成。 -->
 
+## [0.4.10] - 2026-10-21
+
+### 改进
+
+- Tell the whole path when the pointer rests on a breadcrumb, the folders folded into "…" on it, and the whole summary on the line under them, which a narrow window cuts short
+
 ## [0.4.9] - 2026-10-21
 
 ### 改进
