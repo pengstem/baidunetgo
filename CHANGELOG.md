@@ -4,6 +4,12 @@
 
 <!-- 写在这里的内容会成为下一个版本的更新说明；留空则按提交记录自动生成。 -->
 
+## [0.4.9] - 2026-10-21
+
+### 改进
+
+- Keep the selection bar on one line in a narrow window: under 660 px of page its actions drop their labels for icons with tooltips, and the count no longer shrinks, which squeezed "已选 1 项" into a column
+
 ## [0.4.8] - 2026-10-21
 
 ### 改进
