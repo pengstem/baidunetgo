@@ -60,7 +60,7 @@ func (a *App) filesPage(c *ui.Context, t *ui.Theme, p *palette, dir string) {
 		if l.loaded {
 			a.statusBar(c, t, p, l)
 		}
-		a.selectionBar(c, t, p, l)
+		a.selectionBar(c, t, p, l, page.Bounds().W)
 		over := page.FileDragOver()
 		if over {
 			a.dropZone(c, t, p, dir)

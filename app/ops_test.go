@@ -115,3 +115,31 @@ func TestSearch(t *testing.T) {
 	tt.Advance(500 * time.Millisecond)
 	save(t, tt, "search")
 }
+
+// TestNarrowSelectionBar keeps the selection bar on one line in the
+// narrowest window: its actions drop their labels for icons, which still
+// act.
+func TestNarrowSelectionBar(t *testing.T) {
+	a, tt, _ := signedIn(t)
+	l := a.listings["/"]
+	l.sel.Add(fileNamed(t, a, "/", "安装包.dmg").FsID)
+	tt.Advance(time.Second)
+	if r, _ := tt.Find("重命名"); r.W < 60 {
+		t.Fatalf("no label at full width: %v", r)
+	}
+	tt.SetSize(780, 600)
+	tt.Advance(time.Second)
+	save(t, tt, "selection-bar-narrow")
+	if r, _ := tt.Find("重命名"); r.W > 40 {
+		t.Errorf("a label in a narrow window: %v", r)
+	}
+	if r, ok := tt.Find("已选 1 项"); !ok || r.H > 20 {
+		t.Errorf("count wraps: %v", r)
+	}
+	if err := tt.Click("重命名"); err != nil {
+		t.Fatal(err)
+	}
+	if !a.dlg.open || a.dlg.kind != dlgRename {
+		t.Error("the icon did not rename")
+	}
+}

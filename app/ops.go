@@ -291,29 +291,45 @@ func (a *App) fileActions(c *ui.Context, l *listing) {
 	}
 }
 
+// selBarLabels is the page's width under which the selection bar's
+// actions drop their labels and keep only their icons.
+const selBarLabels = 660
+
 // selectionBar floats over the browser while files are chosen, with what
-// can be done to them.
-func (a *App) selectionBar(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
+// can be done to them. On a page narrower than selBarLabels (last frame's
+// width) the actions show only their icons, so the bar never squeezes the
+// count into a column.
+func (a *App) selectionBar(c *ui.Context, t *ui.Theme, p *palette, l *listing, width float32) {
 	files := l.chosen()
 	if len(files) == 0 {
 		return
 	}
+	labels := width == 0 || width >= selBarLabels
 	bar := ui.Row(c).Key("selbar").Absolute().Bottom(40).Attach(ui.AnchorBottom, ui.AnchorBottom).
 		Padding(4, 4, 4, 14).Gap(2).Radius(12).AlignItems(ui.Center).
 		Background(p.Card).Border(1, p.Hairline).Shadow(0, 8, 24, -10, p.Shadow).
 		Transition(ui.ElementTransition{Animation: &motionFade, Enter: &ui.Motion{Y: 8, Opacity: 0}, Exit: &ui.Motion{Opacity: 0}})
 	bar.Children(func() {
 		ui.Text(c, "已选 "+itoa(len(files))+" 项").FontWeight(500).Margin(0, 10, 0, 0).FontFeatures("tnum").
-			ContentTransition(ui.ContentTransition{Numeric: true})
-		action := func(ic, label string) bool {
-			b := ui.ButtonBase(c).Label(label).Height(28).PaddingX(10).Radius(7).Gap(6).AlignItems(ui.Center)
-			if b.Hovered() {
-				b.Background(p.Hover)
+			SingleLine().Shrink(0).ContentTransition(ui.ContentTransition{Numeric: true})
+		button := func(ic, label string) ui.Element {
+			b := ui.ButtonBase(c).Label(label).Height(28).PaddingX(10).Radius(7).Gap(6).AlignItems(ui.Center).Shrink(0)
+			if !labels {
+				b.Tooltip(label).PaddingX(7)
 			}
 			b.Children(func() {
 				ui.Icon(c, icon(ic)).FontSize(15)
-				ui.Text(c, label).SingleLine()
+				if labels {
+					ui.Text(c, label).SingleLine()
+				}
 			})
+			return b
+		}
+		action := func(ic, label string) bool {
+			b := button(ic, label)
+			if b.Hovered() {
+				b.Background(p.Hover)
+			}
 			return b.Clicked()
 		}
 		if action("download", "下载") {
@@ -334,14 +350,10 @@ func (a *App) selectionBar(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 		if action("info", "详情") {
 			a.showInfo(l.dir, files)
 		}
-		del := ui.ButtonBase(c).Label("删除").Height(28).PaddingX(10).Radius(7).Gap(6).AlignItems(ui.Center).TextColor(t.Danger)
+		del := button("trash-2", "删除").TextColor(t.Danger)
 		if del.Hovered() {
 			del.Background(t.Danger.Alpha(0.1))
 		}
-		del.Children(func() {
-			ui.Icon(c, icon("trash-2")).FontSize(15)
-			ui.Text(c, "删除")
-		})
 		if del.Clicked() {
 			a.remove(l.dir, files)
 		}
