@@ -4,6 +4,12 @@
 
 <!-- 写在这里的内容会成为下一个版本的更新说明；留空则按提交记录自动生成。 -->
 
+## [0.4.12] - 2026-10-22
+
+### 改进
+
+- Ask before an upload, move or copy takes a name its folder has, offering to skip, replace or keep both, where uploads overwrote the file there silently and moves and copies failed; replacing puts the old one in the recycle bin, and a copy into its own folder takes a free name
+
 ## [0.4.11] - 2026-10-22
 
 ### 改进
