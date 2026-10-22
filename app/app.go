@@ -99,6 +99,7 @@ func (a *App) Attach(win *mygo.Window) {
 	a.settings = loadSettings()
 	a.useSettings()
 	a.watchSystem()
+	win.OnFocus(func() { a.update(a.refocused) })
 	a.boot()
 }
 

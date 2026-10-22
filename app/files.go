@@ -27,6 +27,7 @@ type listing struct {
 	loading bool
 	err     string
 	shown   time.Time // when the files first showed, to stagger them in
+	read    time.Time // when the netdisk was last asked for them
 
 	list     ui.ListState
 	grid     gridState
@@ -40,6 +41,11 @@ type listing struct {
 }
 
 const listingCacheSize = 40
+
+// staleAfter is how long a folder's files are trusted while it shows: the
+// netdisk may change from the web or a phone, so they are read again,
+// quietly, after it, and as soon as the window comes to the front.
+const staleAfter = 2 * time.Minute
 
 // filesRoute returns the router path showing dir.
 func filesRoute(dir string) string {
@@ -82,7 +88,25 @@ func (a *App) listingFor(dir string) *listing {
 		a.trimListings()
 	}
 	l.used = a.listingTick
+	if l.loaded && !l.loading && time.Since(l.read) > staleAfter {
+		a.load(l)
+	}
 	return l
+}
+
+// refocused reads the folder showing again as the window comes to the
+// front, unless it was just read, and lets the others be read again as
+// they show.
+func (a *App) refocused() {
+	cur := a.currentDir()
+	for dir, l := range a.listings {
+		switch {
+		case dir != cur:
+			l.read = time.Time{}
+		case l.loaded && time.Since(l.read) > 10*time.Second:
+			a.load(l)
+		}
+	}
 }
 
 func (a *App) trimListings() {
@@ -104,7 +128,7 @@ func (a *App) load(l *listing) {
 	if s == nil || l.loading {
 		return
 	}
-	l.loading, l.err = true, ""
+	l.loading, l.err, l.read = true, "", time.Now()
 	order := a.order
 	go func() {
 		files, err := s.client.List(context.Background(), l.dir, order)

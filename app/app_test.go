@@ -237,3 +237,23 @@ func TestGridLongNames(t *testing.T) {
 		prev = r
 	}
 }
+
+// TestFolderReadAgain reads the folder showing again, quietly, when its
+// files are old, and as the window comes to the front: the netdisk may
+// have changed from elsewhere.
+func TestFolderReadAgain(t *testing.T) {
+	a, tt, srv := signedIn(t)
+	l := a.listings["/"]
+	srv.Add(fakepan.Node{Path: "/从手机传的.txt", Data: []byte("hi")})
+	settle(tt)
+	if tt.HasText("从手机传的.txt") {
+		t.Fatal("read again too soon")
+	}
+	l.read = time.Now().Add(-staleAfter - time.Second)
+	waitFor(t, tt, "从手机传的.txt")
+
+	srv.Add(fakepan.Node{Path: "/又一个.txt", Data: []byte("hi")})
+	l.read = time.Now().Add(-time.Minute)
+	a.refocused()
+	waitFor(t, tt, "又一个.txt")
+}
