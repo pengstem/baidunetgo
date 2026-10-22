@@ -49,6 +49,9 @@ func barHeight(c *ui.Context) float32 {
 // material, and the pane of the page with its title bar.
 func (a *App) shell(c *ui.Context, t *ui.Theme, p *palette) {
 	a.sampleSpeed(c)
+	if !a.dlg.open && a.pv == nil && c.Shortcut(ui.Cmd, ui.KeyComma) && a.router.Path() != "/settings" {
+		a.router.Push("/settings")
+	}
 	vibrant := c.Vibrancy()
 	if vibrant {
 		c.Root().Background(ui.Transparent)

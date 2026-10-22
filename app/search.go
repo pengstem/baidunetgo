@@ -149,19 +149,44 @@ func highlight(name, q string, t *ui.Theme) []ui.Span {
 }
 
 // searchField searches the netdisk for what is typed, growing as it takes
-// the focus.
+// the focus. It is built of a bare text input, not ui.SearchField, so that
+// Cmd-F can put the cursor in it.
 func (a *App) searchField(c *ui.Context, t *ui.Theme, p *palette) {
-	f := ui.SearchField(c.Key("search"), &a.query).Label("搜索网盘").Placeholder("搜索").Height(28).Radius(14).
-		Background(p.Control).Border(0, ui.Transparent)
+	f := ui.Row(c.Key("search")).Height(28).Radius(14).PaddingStart(9).PaddingEnd(5).Gap(5).AlignItems(ui.Center).Background(p.Control)
+	var in ui.Element
+	f.Children(func() {
+		ui.Icon(c, icon("search")).FontSize(13).TextColor(t.TextMuted)
+		in = ui.TextInputBase(c, &a.query).Label("搜索网盘").Placeholder("搜索").Grow(1).MinWidth(0)
+		if a.query != "" {
+			x := ui.ButtonBase(c).Label("清除").Size(16, 16).Radius(8).Center().Background(t.TextMuted.Alpha(0.5)).TextColor(t.Background)
+			x.Children(func() { ui.Icon(c, icon("x")).FontSize(10) })
+			if x.Clicked() {
+				a.query = ""
+				in.Focus()
+			}
+		}
+	})
 	w := float32(170)
 	if a.compact {
 		w = 120
 	}
-	if f.FocusWithin() || a.query != "" {
+	if in.Focused() || a.query != "" {
 		w = 240
 	}
 	f.Width(f.AnimateTo("w", w, motionPanel))
-	if f.Submitted() {
+	if in.Focused() && in.Shortcut(0, ui.KeyEscape) {
+		a.query = ""
+	}
+	// Cmd-F puts the cursor in it.
+	if a.finding {
+		in.Focus()
+		a.finding = false
+	}
+	if c.Shortcut(ui.Cmd, ui.KeyF) {
+		a.finding = true
+		c.Invalidate()
+	}
+	if in.Submitted() {
 		a.search(a.query)
 	}
 }

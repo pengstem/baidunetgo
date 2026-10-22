@@ -38,6 +38,7 @@ type App struct {
 	listingTick uint64
 	order       baidu.Order
 	gridView    bool
+	finding     bool              // Cmd-F asks for the search field
 	tileNames   map[string]string // names laid out for grid tiles (tileName)
 	gridSize    [2]float32        // the grid's tiles' width and its height, as last laid out
 	thumbs      *thumbs

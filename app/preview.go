@@ -307,7 +307,10 @@ func (a *App) previewOverlay(c *ui.Context, t *ui.Theme, p *palette) {
 		if pv == nil {
 			return
 		}
+		// The panel itself takes the focus, not its first button, which
+		// Space would press.
 		root := ui.Box(c).Key("preview").Absolute().Top(0).Left(0).Right(0).Bottom(0).Modal().
+			Focusable().FocusRing(false).AutoFocus().
 			Transition(ui.ElementTransition{Animation: &motionHover, Enter: &ui.Motion{Opacity: 0}, Exit: &ui.Motion{Opacity: 0}})
 		root.Children(func() {
 			back := ui.Box(c).Absolute().Top(0).Left(0).Right(0).Bottom(0)
@@ -329,7 +332,8 @@ func (a *App) previewOverlay(c *ui.Context, t *ui.Theme, p *palette) {
 					a.previewBody(c, t, p, pv)
 				})
 			})
-			if root.OverlayShortcut(0, ui.KeyEscape) {
+			// Space closes it too, as Quick Look, unless it plays.
+			if root.OverlayShortcut(0, ui.KeyEscape) || (pv.kind != kindAudio && root.OverlayShortcut(0, ui.KeySpace)) {
 				a.closePreview()
 			}
 			if pv.kind == kindImage {

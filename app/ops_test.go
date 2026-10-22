@@ -157,3 +157,57 @@ func TestNarrowSelectionBar(t *testing.T) {
 		t.Error("the icon did not rename")
 	}
 }
+
+// TestShortcuts: Space looks at the file chosen and closes it again,
+// Cmd-1 and Cmd-2 switch the view, Cmd-Up goes up, Cmd-Down opens,
+// Cmd-F finds, Cmd-comma opens the settings.
+func TestShortcuts(t *testing.T) {
+	a, tt, _ := signedIn(t)
+	a.router.Push(filesRoute("/照片"))
+	waitFor(t, tt, "IMG_2310.jpg")
+	l := a.listings["/照片"]
+	l.sel.Add(fileNamed(t, a, "/照片", "IMG_2311.jpg").FsID)
+	tt.Advance(100 * time.Millisecond)
+	tt.Key(0, ui.KeySpace)
+	tt.Advance(300 * time.Millisecond)
+	if a.pv == nil || a.pv.file.Name != "IMG_2311.jpg" {
+		t.Fatal("Space did not preview")
+	}
+	tt.Key(0, ui.KeySpace)
+	tt.Advance(500 * time.Millisecond)
+	if a.pv != nil {
+		t.Fatalf("Space did not close the preview; focus %v", tt.Texts()[:3])
+	}
+	tt.Key(ui.Cmd, ui.Key2)
+	tt.Advance(100 * time.Millisecond)
+	if !a.gridView {
+		t.Error("Cmd-2 kept the list")
+	}
+	tt.Key(ui.Cmd, ui.Key1)
+	tt.Advance(100 * time.Millisecond)
+	if a.gridView {
+		t.Error("Cmd-1 kept the grid")
+	}
+	l.sel.Clear()
+	l.sel.Add(fileNamed(t, a, "/照片", "京都").FsID)
+	tt.Advance(100 * time.Millisecond)
+	tt.Key(ui.Cmd, ui.KeyDown)
+	waitFor(t, tt, "kyoto-1.png")
+	tt.Key(ui.Cmd, ui.KeyUp)
+	tt.Advance(500 * time.Millisecond)
+	tt.Key(ui.Cmd, ui.KeyUp)
+	tt.Advance(500 * time.Millisecond)
+	if a.currentDir() != "/" {
+		t.Errorf("Cmd-Up went to %q", a.currentDir())
+	}
+	tt.Key(ui.Cmd, ui.KeyF)
+	tt.Advance(100 * time.Millisecond)
+	tt.Type("img_2310")
+	tt.Key(0, ui.KeyEnter)
+	waitFor(t, tt, "找到 1 个结果")
+	tt.Key(ui.Cmd, ui.KeyComma)
+	tt.Advance(500 * time.Millisecond)
+	if a.router.Path() != "/settings" {
+		t.Errorf("Cmd-comma went to %q", a.router.Path())
+	}
+}

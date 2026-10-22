@@ -272,14 +272,31 @@ func (a *App) fileActions(c *ui.Context, l *listing) {
 		return
 	}
 	files := l.chosen()
-	if l.dir != "/" && c.Shortcut(ui.Alt, ui.KeyUp) {
+	if l.dir != "/" && (c.Shortcut(ui.Alt, ui.KeyUp) || c.Shortcut(ui.Cmd, ui.KeyUp)) {
 		a.router.Push(filesRoute(path.Dir(l.dir)))
 	}
 	if c.Shortcut(ui.Cmd|ui.Shift, ui.KeyN) {
 		a.ask(dlgNewFolder, l.dir, nil)
 	}
+	if c.Shortcut(ui.Cmd, ui.KeyR) {
+		a.reload(l.dir)
+	}
+	if c.Shortcut(ui.Cmd, ui.Key1) {
+		a.gridView = false
+	}
+	if c.Shortcut(ui.Cmd, ui.Key2) {
+		a.gridView = true
+	}
 	if len(files) == 0 {
 		return
+	}
+	// Space looks at the file chosen, as Quick Look does; Cmd-Down opens
+	// it, a folder too.
+	if len(files) == 1 && !files[0].IsDir && c.Shortcut(0, ui.KeySpace) {
+		a.open(files[0])
+	}
+	if len(files) == 1 && c.Shortcut(ui.Cmd, ui.KeyDown) {
+		a.open(files[0])
 	}
 	if c.Shortcut(0, ui.KeyF2) && len(files) == 1 {
 		a.ask(dlgRename, l.dir, files)
