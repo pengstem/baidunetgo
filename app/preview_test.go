@@ -171,6 +171,52 @@ func TestPreviewCopyImage(t *testing.T) {
 	}
 }
 
+func TestPreviewPinchAndPan(t *testing.T) {
+	a, tt, _ := signedIn(t)
+	a.router.Push(filesRoute("/照片"))
+	waitFor(t, tt, "IMG_2310.jpg")
+	a.open(fileNamed(t, a, "/照片", "IMG_2311.jpg"))
+	deadline := time.Now().Add(5 * time.Second)
+	for a.pv.bmp == nil {
+		if a.pv.err != "" || time.Now().After(deadline) {
+			t.Fatalf("image did not load: %q", a.pv.err)
+		}
+		time.Sleep(10 * time.Millisecond)
+		tt.Advance(50 * time.Millisecond)
+	}
+	tt.Advance(500 * time.Millisecond)
+	v := a.pv.view
+	cx, cy := v.X+v.W/2, v.Y+v.H/2
+
+	// Two fingers on the picture as it fits move nothing.
+	tt.Scroll(cx, cy, 0, 40)
+	if a.pv.zoom != 1 || a.pv.pan != (ui.Point{}) {
+		t.Errorf("scrolling at fit: zoom %v, pan %v", a.pv.zoom, a.pv.pan)
+	}
+	// A pinch 100 DIPs right of the center keeps that point under it.
+	tt.Pinch(cx+100, cy, 2)
+	tt.Advance(100 * time.Millisecond)
+	if a.pv.zoom != 2 || a.pv.pan != (ui.Point{X: -100}) {
+		t.Errorf("pinch: zoom %v, pan %v", a.pv.zoom, a.pv.pan)
+	}
+	tt.Scroll(cx, cy, 30, 40)
+	tt.Advance(100 * time.Millisecond)
+	if a.pv.zoom != 2 || a.pv.pan != (ui.Point{X: -130, Y: -40}) {
+		t.Errorf("pan: zoom %v, pan %v", a.pv.zoom, a.pv.pan)
+	}
+	tt.Pinch(cx, cy, 0.25)
+	tt.Advance(100 * time.Millisecond)
+	if a.pv.zoom != 1 || a.pv.pan != (ui.Point{}) {
+		t.Errorf("pinch back: zoom %v, pan %v", a.pv.zoom, a.pv.pan)
+	}
+	// A mouse wheel's notches still zoom.
+	tt.Wheel(cx, cy, 0, -100)
+	tt.Advance(300 * time.Millisecond)
+	if a.pv.zoom <= 1 {
+		t.Errorf("wheel left zoom %v", a.pv.zoom)
+	}
+}
+
 func TestCopyImageFromList(t *testing.T) {
 	a, tt, _ := signedIn(t)
 	a.router.Push(filesRoute("/照片/京都"))

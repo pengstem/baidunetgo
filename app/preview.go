@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"math"
 	"path"
 	"strings"
 	"time"
@@ -49,6 +50,10 @@ type previewState struct {
 	zoom    float32
 	pan     ui.Point
 	dismiss ui.Point
+	// follow is set while the fingers pinch or pan the picture, which
+	// then follows them at once rather than easing after them.
+	follow bool
+	view   ui.Rect // the viewer's box in the last frame
 
 	buf      *editor.Buffer
 	ed       editor.State
@@ -437,6 +442,21 @@ func (pv *previewState) zoomBy(f float32) {
 	}
 }
 
+// zoomAt zooms the picture by f, within 1 to 8 times, keeping the point
+// under (x, y) in the viewer where it is.
+func (pv *previewState) zoomAt(f, x, y float32) {
+	old := pv.zoom
+	pv.zoomBy(f)
+	if pv.zoom == 1 || pv.zoom == old {
+		return
+	}
+	// The picture shows centered in the viewer, moved by the pan.
+	r := pv.zoom / old
+	dx, dy := x-pv.view.W/2-pv.pan.X, y-pv.view.H/2-pv.pan.Y
+	pv.pan.X += dx * (1 - r)
+	pv.pan.Y += dy * (1 - r)
+}
+
 // glassButton is a round icon button over the dark preview backdrop.
 func glassButton(c *ui.Context, ic, label string) ui.Element {
 	b := ui.ButtonBase(c).Label(label).Tooltip(label).Size(32, 32).Radius(16).Center().
@@ -501,8 +521,9 @@ func (a *App) previewMessage(c *ui.Context, t *ui.Theme, p *palette, pv *preview
 	})
 }
 
-// imageViewer shows a picture, grown from its thumbnail, zoomed with the
-// wheel and the buttons, and dragged down to close.
+// imageViewer shows a picture, grown from its thumbnail, zoomed with a
+// pinch, the wheel and the buttons, panned with two fingers or dragged,
+// and dragged down to close.
 func (a *App) imageViewer(c *ui.Context, t *ui.Theme, p *palette, pv *previewState) {
 	src := pv.bmp
 	if src == nil {
@@ -511,25 +532,26 @@ func (a *App) imageViewer(c *ui.Context, t *ui.Theme, p *palette, pv *previewSta
 	ww, wh := c.Size()
 	availW, availH := ww-48, wh-titleBarMin-8-24-40
 	box := ui.Box(c).Fill().Center()
+	pv.view = box.Bounds()
 	box.HandleInput(func(ev ui.InputEvent) bool {
-		if ev.Kind != ui.InputScroll || pv.bmp == nil {
+		if pv.bmp == nil {
 			return false
 		}
-		f := float32(1.0015)
-		if ev.Precise {
-			f = 1.004
-		}
-		z := pv.zoom
-		for range int(abs32(ev.DY)) {
-			if ev.DY < 0 {
-				z *= f
-			} else {
-				z /= f
-			}
-		}
-		pv.zoom = clamp(z, 1, 8)
-		if pv.zoom == 1 {
-			pv.pan = ui.Point{}
+		switch {
+		case ev.Kind == ui.InputZoom:
+			pv.zoomAt(ev.Scale, ev.X, ev.Y)
+			pv.follow = true
+		case ev.Kind == ui.InputScroll && !ev.Precise:
+			// A mouse wheel's notches zoom.
+			pv.zoomAt(float32(math.Pow(1.0015, float64(-ev.DY))), ev.X, ev.Y)
+		case ev.Kind == ui.InputScroll && pv.zoom > 1:
+			// A touchpad's two fingers move the picture, as they would
+			// the page under it.
+			pv.pan.X -= ev.DX
+			pv.pan.Y -= ev.DY
+			pv.follow = true
+		default:
+			return false
 		}
 		return true
 	})
@@ -550,13 +572,20 @@ func (a *App) imageViewer(c *ui.Context, t *ui.Theme, p *palette, pv *previewSta
 		}
 		w, h := float32(iw)*scale, float32(ih)*scale
 		z := box.AnimateTo("zoom", pv.zoom, motionPanel)
+		move := motionPanel
+		if pv.follow {
+			z = box.Jump("zoom", pv.zoom)
+			move = ui.Animation{Duration: time.Nanosecond}
+			pv.follow = false
+		}
 		img := ui.Image(c, src).Size(w*z, h*z).Fit(ui.Contain).Radius(3).
 			Shadow(0, 30, 80, -20, ui.RGBA(0, 0, 0, 0.6)).
 			ContentTransition(ui.ContentTransition{}).
 			Transition(ui.ElementTransition{Match: thumbMatch{pv.file.FsID}, Animation: &motionPanel})
 		if pv.zoom > 1 {
 			img.Draggable(&pv.pan, ui.DraggableOptions{
-				Bounds: &ui.Rect{X: -w * z / 2, Y: -h * z / 2, W: w * z, H: h * z},
+				Bounds:    &ui.Rect{X: -w * z / 2, Y: -h * z / 2, W: w * z, H: h * z},
+				Animation: move,
 			}).Cursor(ui.CursorGrab)
 		} else {
 			img.Draggable(&pv.dismiss, ui.DraggableOptions{
