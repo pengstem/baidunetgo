@@ -4,6 +4,12 @@
 
 <!-- 写在这里的内容会成为下一个版本的更新说明；留空则按提交记录自动生成。 -->
 
+## [0.4.14] - 2026-10-22
+
+### 改进
+
+- Try a failed transfer again by itself, five times over a few minutes, from where it stopped, unless trying again cannot help (session expired, disk or netdisk full, file gone); list a folder to download four subfolders at a time, say so on the transfers page while it does, and tell which folders could not be read instead of leaving their files out silently
+
 ## [0.4.13] - 2026-10-22
 
 ### 改进
