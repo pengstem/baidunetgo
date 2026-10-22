@@ -4,6 +4,12 @@
 
 <!-- 写在这里的内容会成为下一个版本的更新说明；留空则按提交记录自动生成。 -->
 
+## [0.4.17] - 2026-10-22
+
+### 改进
+
+- Search reads every page of results, up to 3,000, where it read only the first 500 and said nothing of the rest; searched from a folder, a switch keeps the search to that folder; and searching the same words again searches afresh
+
 ## [0.4.16] - 2026-10-22
 
 ### 改进
