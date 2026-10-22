@@ -4,6 +4,13 @@
 
 <!-- 写在这里的内容会成为下一个版本的更新说明；留空则按提交记录自动生成。 -->
 
+## [0.4.16] - 2026-10-22
+
+### 改进
+
+- Read the folder showing again, quietly, when the window comes to the front and every two minutes while it shows, and other folders as they show again, so changes made from the web or a phone appear without pressing refresh
+- Fetch thumbnails at the size they show, about 140×90 for list icons and 360×270 for grid tiles where every one was 850×580 (2 MB of memory each), the ones asked for last first, skipping rows scrolled past, and keep up to 256 MB of them on disk across launches, deleted on sign-out
+
 ## [0.4.15] - 2026-10-22
 
 ### 改进
