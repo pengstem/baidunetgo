@@ -112,18 +112,34 @@ func (c *Client) Rename(ctx context.Context, p, name string) error {
 
 // Move moves files into a directory.
 func (c *Client) Move(ctx context.Context, paths []string, dir string) error {
-	return c.fileOp(ctx, "移动", "move", moveList(paths, dir))
+	return c.MoveAs(ctx, paths, nil, dir)
 }
 
 // Copy copies files into a directory.
 func (c *Client) Copy(ctx context.Context, paths []string, dir string) error {
-	return c.fileOp(ctx, "复制", "copy", moveList(paths, dir))
+	return c.CopyAs(ctx, paths, nil, dir)
 }
 
-func moveList(paths []string, dir string) []map[string]string {
+// MoveAs moves files into a directory, each under the name names gives
+// it, or its own where names is nil.
+func (c *Client) MoveAs(ctx context.Context, paths, names []string, dir string) error {
+	return c.fileOp(ctx, "移动", "move", moveList(paths, names, dir))
+}
+
+// CopyAs copies files into a directory, each under the name names gives
+// it, or its own where names is nil.
+func (c *Client) CopyAs(ctx context.Context, paths, names []string, dir string) error {
+	return c.fileOp(ctx, "复制", "copy", moveList(paths, names, dir))
+}
+
+func moveList(paths, names []string, dir string) []map[string]string {
 	list := make([]map[string]string, len(paths))
 	for i, p := range paths {
-		list[i] = map[string]string{"path": p, "dest": dir, "newname": path.Base(p)}
+		name := path.Base(p)
+		if names != nil {
+			name = names[i]
+		}
+		list[i] = map[string]string{"path": p, "dest": dir, "newname": name}
 	}
 	return list
 }

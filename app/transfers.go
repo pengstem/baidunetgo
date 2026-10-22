@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"os"
 	"path"
 	"path/filepath"
@@ -95,15 +96,57 @@ func (a *App) download(files []baidu.File) {
 	})
 }
 
-// upload queues local files and folders to go into dir.
+// upload queues local files and folders to go into dir, asking first what
+// to do with names it has already.
 func (a *App) upload(locals []string, dir string) {
 	if a.xfer == nil || len(locals) == 0 {
 		return
 	}
-	a.xfer.AddUploads(locals, dir)
+	names := make([]string, len(locals))
+	for i, l := range locals {
+		names[i] = filepath.Base(l)
+	}
+	a.place("上传", dir, names, nil, func(pl placement) {
+		renamed := map[string]string{}
+		var going []string
+		for i, l := range locals {
+			if pl.names[i] != "" {
+				going = append(going, l)
+				renamed[l] = pl.names[i]
+			}
+		}
+		if len(pl.replaced) == 0 {
+			if a.dlg.kind == dlgConflict {
+				a.dlg.open = false
+			}
+			if len(going) > 0 {
+				a.queueUploads(going, dir, renamed)
+			}
+			return
+		}
+		// What they replace goes to the recycle bin first, dissolving.
+		a.run(func(ctx context.Context, c *baidu.Client) error { return c.Delete(ctx, paths(pl.replaced)) }, []string{dir}, "", func() {
+			a.recycleDirty = true
+			a.queueUploads(going, dir, renamed)
+		})
+		if l := a.listings[dir]; l != nil {
+			ids := make([]int64, len(pl.replaced))
+			for i, f := range pl.replaced {
+				ids[i] = f.FsID
+			}
+			a.dissolve(l, ids)
+		}
+	})
+}
+
+func (a *App) queueUploads(locals []string, dir string, names map[string]string) {
+	if a.xfer == nil {
+		return
+	}
+	a.xfer.AddUploads(locals, dir, names)
 	n := itoa(len(locals)) + " 项"
 	if len(locals) == 1 {
-		n = "「" + filepath.Base(locals[0]) + "」"
+		n = "「" + names[locals[0]] + "」"
 	}
 	a.pendingToasts = append(a.pendingToasts, ui.Toast{
 		Title: "正在上传" + n + "到「" + dirLabel(dir) + "」", Type: "success", Action: "查看", Timeout: briefToast,

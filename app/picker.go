@@ -81,18 +81,51 @@ func (a *App) pickerDialog(c *ui.Context, t *ui.Theme, p *palette) {
 		}
 	}
 	if a.dialogButtons(c, t, p, verb+"到这里", false, invalid) {
-		files, from, to, kind := d.files, d.dir, pk.dir, d.kind
-		op := func(ctx context.Context, c *baidu.Client) error {
-			if kind == dlgCopy {
-				return c.Copy(ctx, paths(files), to)
+		a.moveOrCopy(d.kind, d.files, d.dir, pk.dir)
+	}
+}
+
+// moveOrCopy moves or copies files from one folder into another, asking
+// first what to do with names it has already.
+func (a *App) moveOrCopy(kind dialogKind, files []baidu.File, from, to string) {
+	verb := "移动"
+	if kind == dlgCopy {
+		verb = "复制"
+	}
+	names := make([]string, len(files))
+	for i, f := range files {
+		names[i] = f.Name
+	}
+	a.dlg.busy, a.dlg.err = true, ""
+	a.place(verb, to, names, paths(files), func(pl placement) {
+		var srcs, dests []string
+		for i, f := range files {
+			if pl.names[i] != "" {
+				srcs, dests = append(srcs, f.Path), append(dests, pl.names[i])
 			}
-			return c.Move(ctx, paths(files), to)
 		}
 		if l := a.listings[from]; l != nil {
 			l.sel.Clear()
 		}
+		if len(srcs) == 0 {
+			a.dlg.busy, a.dlg.open = false, false
+			return
+		}
+		replaced := paths(pl.replaced)
+		op := func(ctx context.Context, c *baidu.Client) error {
+			if err := c.Delete(ctx, replaced); err != nil {
+				return err
+			}
+			if kind == dlgCopy {
+				return c.CopyAs(ctx, srcs, dests, to)
+			}
+			return c.MoveAs(ctx, srcs, dests, to)
+		}
+		if len(replaced) > 0 {
+			a.recycleDirty = true
+		}
 		a.run(op, []string{from, to}, "已"+verb+"到「"+dirLabel(to)+"」", nil)
-	}
+	})
 }
 
 // folderChooser lets the user go through the netdisk's folders to choose

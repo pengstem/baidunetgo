@@ -233,19 +233,22 @@ func uniquePath(p string, taken map[string]bool) string {
 }
 
 // AddUploads queues local files, and the files of local folders, to go to
-// remoteDir.
-func (m *Manager) AddUploads(locals []string, remoteDir string) {
+// remoteDir, each under its own name or the one names gives it.
+func (m *Manager) AddUploads(locals []string, remoteDir string, names map[string]string) {
 	go func() {
 		for _, l := range locals {
 			st, err := os.Stat(l)
 			if err != nil {
 				continue
 			}
+			root := path.Join(remoteDir, filepath.Base(l))
+			if name := names[l]; name != "" {
+				root = path.Join(remoteDir, name)
+			}
 			if !st.IsDir() {
-				m.queueUpload(l, path.Join(remoteDir, filepath.Base(l)), st.Size())
+				m.queueUpload(l, root, st.Size())
 				continue
 			}
-			parent := filepath.Dir(l)
 			filepath.WalkDir(l, func(p string, d os.DirEntry, err error) error {
 				if err != nil || d.IsDir() {
 					return nil
@@ -254,8 +257,8 @@ func (m *Manager) AddUploads(locals []string, remoteDir string) {
 				if err != nil {
 					return nil
 				}
-				rel, _ := filepath.Rel(parent, p)
-				m.queueUpload(p, path.Join(remoteDir, filepath.ToSlash(rel)), info.Size())
+				rel, _ := filepath.Rel(l, p)
+				m.queueUpload(p, path.Join(root, filepath.ToSlash(rel)), info.Size())
 				return nil
 			})
 		}

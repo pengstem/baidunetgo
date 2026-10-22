@@ -24,6 +24,7 @@ const (
 	dlgSaveLink
 	dlgOffline
 	dlgInfo
+	dlgConflict
 )
 
 // dialog is the dialog over the window, if any.
@@ -37,6 +38,7 @@ type dialog struct {
 	err   string
 
 	picker picker // the destination of a move or copy
+	clash  *clash // the names a destination already has
 }
 
 // chosen returns the files chosen in a listing, the row under the pointer
@@ -176,6 +178,8 @@ func (a *App) dialogs(c *ui.Context, t *ui.Theme, p *palette) {
 			a.offlineDialog(c, t, p)
 		case dlgInfo:
 			a.infoDialog(c, t, p)
+		case dlgConflict:
+			a.conflictDialog(c, t, p)
 		}
 	})
 	if open && !d.open && d.busy {

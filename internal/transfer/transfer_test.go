@@ -151,7 +151,7 @@ func TestFolderDownloadAndUpload(t *testing.T) {
 	os.MkdirAll(filepath.Join(up, "sub"), 0o755)
 	os.WriteFile(filepath.Join(up, "a.txt"), []byte("hello"), 0o644)
 	os.WriteFile(filepath.Join(up, "sub", "b.txt"), []byte("world"), 0o644)
-	m.AddUploads([]string{up}, "/备份")
+	m.AddUploads([]string{up}, "/备份", nil)
 	time.Sleep(200 * time.Millisecond)
 	wait(t, m, Done)
 	if string(srv.Data("/备份/up/sub/b.txt")) != "world" {
