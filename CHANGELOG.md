@@ -4,6 +4,13 @@
 
 <!-- 写在这里的内容会成为下一个版本的更新说明；留空则按提交记录自动生成。 -->
 
+## [0.4.11] - 2026-10-22
+
+### 改进
+
+- Pinch to zoom the image preview about the fingers and pan it with two fingers, as a native viewer does, where two fingers zoomed it before; a mouse wheel still zooms, now about the pointer
+- Update MyGo to v0.6.2, which hovers the row that takes a removed one's place under a still pointer, shows the right cursor on scroll bars, brings the window forward on a second launch on Windows and Wayland, and reports touchpad pinches
+
 ## [0.4.10] - 2026-10-21
 
 ### 改进
