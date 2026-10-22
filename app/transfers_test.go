@@ -49,6 +49,7 @@ func TestDownloadAndUploadPage(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 		tt.Advance(50 * time.Millisecond)
 	}
+	waitFor(t, tt, "已完成 5")
 	if err := tt.Click("已完成 5"); err != nil {
 		t.Fatalf("%v; %q", err, tt.Texts())
 	}

@@ -106,6 +106,9 @@ type Manager struct {
 	holding bool // Hold: nothing starts
 	stop    chan struct{}
 	reading atomic.Int32 // folders being listed to download
+
+	noteMu      sync.Mutex
+	notePending bool // OnChange is due
 }
 
 // Reading reports how many folders are being listed to download.
@@ -166,10 +169,26 @@ func (t *Task) snapshot() Task {
 		Done: t.done.Load(), State: t.State, Err: t.Err, Created: t.Created, Finished: t.Finished, MD5: t.MD5, Verifying: t.Verifying, Resume: t.Resume, Retries: t.Retries, RetryAt: t.RetryAt, Speed: t.Speed}
 }
 
+// changeEvery is how often OnChange is called at most: changes coming
+// faster, as a folder of thousands of files is queued, go together.
+const changeEvery = 50 * time.Millisecond
+
 func (m *Manager) changed() {
-	if m.OnChange != nil {
-		m.OnChange()
+	if m.OnChange == nil {
+		return
 	}
+	m.noteMu.Lock()
+	defer m.noteMu.Unlock()
+	if m.notePending {
+		return
+	}
+	m.notePending = true
+	time.AfterFunc(changeEvery, func() {
+		m.noteMu.Lock()
+		m.notePending = false
+		m.noteMu.Unlock()
+		m.OnChange() // reads the tasks as they are now
+	})
 }
 
 // save writes the tasks; it runs with m.mu held.
@@ -181,7 +200,7 @@ func (m *Manager) save() {
 	for i, t := range m.tasks {
 		snap[i] = t.snapshot()
 	}
-	data, err := json.MarshalIndent(snap, "", " ")
+	data, err := json.Marshal(snap)
 	if err != nil {
 		return
 	}
@@ -204,10 +223,11 @@ func (m *Manager) add(t *Task) {
 // localDir as they are under baseDir in the netdisk.
 func (m *Manager) AddDownloads(files []baidu.File, localDir string) {
 	go func() {
+		b := m.newBatch()
 		taken := map[string]bool{}
 		for _, f := range files {
 			if !f.IsDir {
-				m.queueDownload(f, filepath.Join(localDir, f.Name), taken)
+				b.add(&Task{Kind: Download, Name: f.Name, Remote: f.Path, Local: uniquePath(filepath.Join(localDir, f.Name), taken), Size: f.Size, MD5: f.MD5})
 				continue
 			}
 			root := uniquePath(filepath.Join(localDir, f.Name), taken)
@@ -215,25 +235,43 @@ func (m *Manager) AddDownloads(files []baidu.File, localDir string) {
 			m.changed()
 			m.walk(f.Path, func(sub baidu.File) {
 				rel := strings.TrimPrefix(sub.Path, f.Path+"/")
-				m.queueDownload(sub, filepath.Join(root, filepath.FromSlash(rel)), nil)
+				local := filepath.Join(root, filepath.FromSlash(rel))
+				b.add(&Task{Kind: Download, Name: sub.Name, Remote: sub.Path, Local: local, Size: sub.Size, MD5: sub.MD5})
 			})
 			m.reading.Add(-1)
 		}
-		m.mu.Lock()
-		m.save()
-		m.mu.Unlock()
-		m.schedule()
+		b.flush()
 	}()
 }
 
-func (m *Manager) queueDownload(f baidu.File, local string, taken map[string]bool) {
-	if taken != nil {
-		local = uniquePath(local, taken)
+// batch queues tasks a few hundred at a time, or every fraction of a
+// second while they come slowly, so that a folder of thousands of files
+// does not go through the queue, and its listeners, file by file.
+type batch struct {
+	m     *Manager
+	tasks []*Task
+	since time.Time
+}
+
+func (m *Manager) newBatch() *batch { return &batch{m: m, since: time.Now()} }
+
+func (b *batch) add(t *Task) {
+	b.tasks = append(b.tasks, t)
+	if len(b.tasks) >= 256 || time.Since(b.since) > 200*time.Millisecond {
+		b.flush()
 	}
-	m.mu.Lock()
-	m.add(&Task{Kind: Download, Name: f.Name, Remote: f.Path, Local: local, Size: f.Size, MD5: f.MD5})
-	m.mu.Unlock()
-	m.schedule()
+}
+
+// flush queues the tasks added, saves the queue and starts what it can.
+func (b *batch) flush() {
+	b.m.mu.Lock()
+	for _, t := range b.tasks {
+		b.m.add(t)
+	}
+	b.m.save()
+	b.m.mu.Unlock()
+	b.tasks, b.since = b.tasks[:0], time.Now()
+	b.m.schedule()
 }
 
 // walkers is how many folders walk lists at once.
@@ -309,6 +347,7 @@ func uniquePath(p string, taken map[string]bool) string {
 // remoteDir, each under its own name or the one names gives it.
 func (m *Manager) AddUploads(locals []string, remoteDir string, names map[string]string) {
 	go func() {
+		b := m.newBatch()
 		for _, l := range locals {
 			st, err := os.Stat(l)
 			if err != nil {
@@ -319,7 +358,7 @@ func (m *Manager) AddUploads(locals []string, remoteDir string, names map[string
 				root = path.Join(remoteDir, name)
 			}
 			if !st.IsDir() {
-				m.queueUpload(l, root, st.Size())
+				b.add(&Task{Kind: Upload, Name: path.Base(root), Remote: root, Local: l, Size: st.Size()})
 				continue
 			}
 			filepath.WalkDir(l, func(p string, d os.DirEntry, err error) error {
@@ -331,21 +370,13 @@ func (m *Manager) AddUploads(locals []string, remoteDir string, names map[string
 					return nil
 				}
 				rel, _ := filepath.Rel(l, p)
-				m.queueUpload(p, path.Join(root, filepath.ToSlash(rel)), info.Size())
+				remote := path.Join(root, filepath.ToSlash(rel))
+				b.add(&Task{Kind: Upload, Name: path.Base(remote), Remote: remote, Local: p, Size: info.Size()})
 				return nil
 			})
 		}
-		m.mu.Lock()
-		m.save()
-		m.mu.Unlock()
+		b.flush()
 	}()
-}
-
-func (m *Manager) queueUpload(local, remote string, size int64) {
-	m.mu.Lock()
-	m.add(&Task{Kind: Upload, Name: path.Base(remote), Remote: remote, Local: local, Size: size})
-	m.mu.Unlock()
-	m.schedule()
 }
 
 // schedule starts queued tasks while fewer than Parallel run.
