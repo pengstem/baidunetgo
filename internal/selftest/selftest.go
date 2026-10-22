@@ -496,7 +496,17 @@ func (r *run) transfers(files []local) {
 		m.Threads = 4
 		defer m.Close()
 		dir := filepath.Join(r.tmp, "dl")
-		m.AddDownloads([]baidu.File{{Path: path.Join(r.box, f.name), Name: f.name, Size: int64(len(f.data))}}, dir)
+		// As listed, with the MD5 the download is checked against.
+		listed := baidu.File{Path: path.Join(r.box, f.name), Name: f.name, Size: int64(len(f.data))}
+		if got, err := r.c.List(r.ctx, r.box, baidu.Order{}); err == nil {
+			if i := slices.IndexFunc(got, func(g baidu.File) bool { return g.Name == f.name }); i >= 0 {
+				listed = got[i]
+			}
+		}
+		if listed.MD5 != "" && listed.MD5 != f.sum {
+			return "", fmt.Errorf("网盘列出的 MD5 %s 与内容的 %s 不同", listed.MD5, f.sum)
+		}
+		m.AddDownloads([]baidu.File{listed}, dir)
 		start := time.Now()
 		for time.Since(start) < 3*time.Minute {
 			time.Sleep(300 * time.Millisecond)
@@ -515,7 +525,11 @@ func (r *run) transfers(files []local) {
 					return "", fmt.Errorf("内容不一致")
 				}
 				sec := time.Since(start).Seconds()
-				return fmt.Sprintf("%s，%.1f MB/s，内容一致", size(len(data)), float64(len(data))/sec/(1<<20)), nil
+				checked := ""
+				if listed.MD5 != "" {
+					checked = "，按网盘的 MD5 校验过"
+				}
+				return fmt.Sprintf("%s，%.1f MB/s，内容一致%s", size(len(data)), float64(len(data))/sec/(1<<20), checked), nil
 			case transfer.Failed:
 				return "", fmt.Errorf("%s", ts[0].Err)
 			}
