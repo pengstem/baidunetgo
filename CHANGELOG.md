@@ -4,6 +4,16 @@
 
 <!-- 写在这里的内容会成为下一个版本的更新说明；留空则按提交记录自动生成。 -->
 
+## [0.4.18] - 2026-10-22
+
+### 新增
+
+- Add Finder's shortcuts: Space looks at the file chosen and closes the preview again, Cmd-Down opens and Cmd-Up goes up, Cmd-R reads the folder again, Cmd-1 and Cmd-2 switch list and grid, Cmd-F finds and Cmd-comma opens the settings; the preview takes the focus itself, where its zoom-out button had it and Space pressed it
+
+### 改进
+
+- Let the settings cap the speed of all downloads and of all uploads, so a transfer need not take the whole connection, and ask before quitting or closing the window while transfers go on, which paused them without a word
+
 ## [0.4.17] - 2026-10-22
 
 ### 改进
