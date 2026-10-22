@@ -4,6 +4,13 @@
 
 <!-- 写在这里的内容会成为下一个版本的更新说明；留空则按提交记录自动生成。 -->
 
+## [0.4.15] - 2026-10-22
+
+### 改进
+
+- Queue the files of a folder a few hundred at a time and tell listeners of changes at most every 50 ms, where each file went through the queue and its listeners alone: queueing 10,000 files took 10,000 notices and 50 million task copies, now 3 and 25,000
+- Check a finished download against the content MD5 the listing and the download host agree on, downloading it afresh when it differs, and check the disk has room before a download starts; the listing's scrambled MD5s are decoded, which the info panel showed scrambled
+
 ## [0.4.14] - 2026-10-22
 
 ### 改进
