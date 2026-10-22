@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -208,5 +210,88 @@ func TestHoldWaitsThenGoesOn(t *testing.T) {
 	got, _ := os.ReadFile(filepath.Join(dir, "大文件.bin"))
 	if !bytes.Equal(got, data) {
 		t.Fatal("content differs after the hold")
+	}
+}
+
+// pausing stops an upload as its first part is in, and notes what each
+// upload goes on from.
+type pausing struct {
+	*counting
+	m     *Manager
+	froms []*baidu.UploadState
+	once  sync.Once
+}
+
+func (p *pausing) Upload(ctx context.Context, local, remote string, parallel int, progress func(done, total int64), from *baidu.UploadState, note func(baidu.UploadState)) error {
+	p.froms = append(p.froms, from)
+	return p.counting.Upload(ctx, local, remote, parallel, progress, from, func(s baidu.UploadState) {
+		note(s)
+		if slices.ContainsFunc(s.Parts, func(x string) bool { return x != "" }) {
+			p.once.Do(func() {
+				go p.m.PauseAll()
+				<-ctx.Done()
+			})
+		}
+	})
+}
+
+// TestUploadResumes goes on with an upload paused, and kept across a
+// launch, from the parts it sent.
+func TestUploadResumes(t *testing.T) {
+	srv, c, _ := setup(t)
+	dir := t.TempDir()
+	data := make([]byte, 13<<20+5)
+	rand.New(rand.NewSource(3)).Read(data)
+	local := filepath.Join(dir, "大.bin")
+	os.WriteFile(local, data, 0o644)
+	state := filepath.Join(dir, "tasks.json")
+	p := &pausing{counting: c}
+	m := New(p, baidu.Expired, state)
+	p.m = m
+	m.AddUploads([]string{local}, "/", nil)
+	time.Sleep(100 * time.Millisecond)
+	paused := wait(t, m, Paused)
+	if paused.Resume == nil || paused.Done == 0 {
+		t.Fatalf("nothing kept to go on from: %+v", paused)
+	}
+	m.Close()
+
+	m2 := New(p, baidu.Expired, state)
+	defer m2.Close()
+	m2.ResumeAll()
+	wait(t, m2, Done)
+	if !bytes.Equal(srv.Data("/大.bin"), data) {
+		t.Fatal("content differs")
+	}
+	last := p.froms[len(p.froms)-1]
+	if last == nil || last.Parts[0] == "" {
+		t.Errorf("the second launch started afresh: %+v", last)
+	}
+	if m2.Tasks()[0].Resume != nil {
+		t.Error("a finished upload keeps its parts")
+	}
+}
+
+// TestUploadDropped starts afresh when the netdisk has let go of the
+// parts sent.
+func TestUploadDropped(t *testing.T) {
+	srv, c, _ := setup(t)
+	dir := t.TempDir()
+	data := make([]byte, 9<<20)
+	rand.New(rand.NewSource(4)).Read(data)
+	local := filepath.Join(dir, "大.bin")
+	os.WriteFile(local, data, 0o644)
+	p := &pausing{counting: c}
+	m := New(p, baidu.Expired, "")
+	defer m.Close()
+	p.m = m
+	m.AddUploads([]string{local}, "/", nil)
+	time.Sleep(100 * time.Millisecond)
+	wait(t, m, Paused)
+	srv.DropUploads()
+	m.ResumeAll()
+	wait(t, m, Done)
+	if !bytes.Equal(srv.Data("/大.bin"), data) {
+		t.Fatal("content differs")
 	}
 }

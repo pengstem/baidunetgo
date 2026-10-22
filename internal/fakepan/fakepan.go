@@ -48,6 +48,8 @@ type Server struct {
 	shares   []*share
 	offlines []*offline
 	nextID   int64
+	// uploads are the parts sent of uploads not joined yet, by id.
+	uploads map[string]map[int][]byte
 }
 
 // New starts a fake netdisk holding a few sample folders and files.

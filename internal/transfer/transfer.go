@@ -26,7 +26,7 @@ type Netdisk interface {
 	DownloadURL(ctx context.Context, path string) (string, error)
 	Fetch(ctx context.Context, url string, off, n int64) (*http.Response, error)
 	List(ctx context.Context, dir string, o baidu.Order) ([]baidu.File, error)
-	Upload(ctx context.Context, local, remote string, parallel int, progress func(done, total int64)) error
+	Upload(ctx context.Context, local, remote string, parallel int, progress func(done, total int64), from *baidu.UploadState, note func(baidu.UploadState)) error
 }
 
 // Kind is which way a task goes.
@@ -61,6 +61,8 @@ type Task struct {
 	Err      string    `json:"err,omitempty"`
 	Created  time.Time `json:"created"`
 	Finished time.Time `json:"finished,omitzero"`
+	// Resume is how far an upload went, to go on from there.
+	Resume *baidu.UploadState `json:"resume,omitempty"`
 	// Speed is bytes a second, while it runs.
 	Speed float64 `json:"-"`
 
@@ -127,7 +129,7 @@ func (m *Manager) Tasks() []Task {
 
 func (t *Task) snapshot() Task {
 	return Task{ID: t.ID, Kind: t.Kind, Name: t.Name, Remote: t.Remote, Local: t.Local, Size: t.Size,
-		Done: t.done.Load(), State: t.State, Err: t.Err, Created: t.Created, Finished: t.Finished, Speed: t.Speed}
+		Done: t.done.Load(), State: t.State, Err: t.Err, Created: t.Created, Finished: t.Finished, Resume: t.Resume, Speed: t.Speed}
 }
 
 func (m *Manager) changed() {
@@ -317,6 +319,9 @@ func (m *Manager) run(ctx context.Context, t *Task) {
 	case Download:
 		err = m.download(ctx, t)
 	case Upload:
+		m.mu.Lock()
+		from := t.Resume
+		m.mu.Unlock()
 		err = m.nd.Upload(ctx, t.Local, t.Remote, m.Upload, func(done, total int64) {
 			t.done.Store(done)
 			if total > 0 {
@@ -324,6 +329,10 @@ func (m *Manager) run(ctx context.Context, t *Task) {
 				t.Size = total
 				m.mu.Unlock()
 			}
+		}, from, func(r baidu.UploadState) {
+			m.mu.Lock()
+			t.Resume = &r
+			m.mu.Unlock()
 		})
 		if errors.Is(err, baidu.ErrExists) {
 			err = nil
@@ -337,7 +346,7 @@ func (m *Manager) run(ctx context.Context, t *Task) {
 	case err != nil:
 		t.State, t.Err = Failed, err.Error()
 	default:
-		t.State, t.Finished = Done, time.Now()
+		t.State, t.Finished, t.Resume = Done, time.Now(), nil
 		t.done.Store(t.Size)
 	}
 	t.Speed = 0

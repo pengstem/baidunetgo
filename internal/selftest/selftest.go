@@ -9,6 +9,7 @@ import (
 	"context"
 	"crypto/md5"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"image"
 	_ "image/png"
@@ -168,12 +169,61 @@ func (r *run) uploads() []local {
 		os.WriteFile(p, f.data, 0o644)
 		r.check("上传 "+f.name, func() (string, error) {
 			start := time.Now()
-			err := r.c.Upload(r.ctx, p, path.Join(r.box, f.name), 4, nil)
+			err := r.c.Upload(r.ctx, p, path.Join(r.box, f.name), 4, nil, nil, nil)
 			sec := time.Since(start).Seconds()
 			return fmt.Sprintf("%s，%.1f KB/s", size(len(f.data)), float64(len(f.data))/1024/sec), err
 		})
 	}
+	if f, ok := r.resumed(rng); ok {
+		files = append(files, f)
+	}
 	return files
+}
+
+// resumed uploads a file in two goes, stopping the first once a part is
+// sent, and checks what the netdisk joined.
+func (r *run) resumed(rng *rand.Rand) (local, bool) {
+	f := local{name: "续传.bin", data: make([]byte, 13<<20+777)}
+	rng.Read(f.data)
+	sum := md5.Sum(f.data)
+	f.sum = hex.EncodeToString(sum[:])
+	p := filepath.Join(r.tmp, f.name)
+	os.WriteFile(p, f.data, 0o644)
+	ok := false
+	r.check("断点续传", func() (string, error) {
+		remotePath := path.Join(r.box, f.name)
+		ctx, cancel := context.WithCancel(r.ctx)
+		defer cancel()
+		var saved baidu.UploadState
+		err := r.c.Upload(ctx, p, remotePath, 1, nil, nil, func(s baidu.UploadState) {
+			saved = s
+			if slices.ContainsFunc(s.Parts, func(x string) bool { return x != "" }) {
+				cancel()
+			}
+		})
+		if !errors.Is(err, context.Canceled) {
+			return "", fmt.Errorf("第一次没有停在中途：%v", err)
+		}
+		before := 0
+		for _, x := range saved.Parts {
+			if x != "" {
+				before++
+			}
+		}
+		if err := r.c.Upload(r.ctx, p, remotePath, 4, nil, &saved, nil); err != nil {
+			return "", err
+		}
+		got, err := remote.ReadAll(r.ctx, r.c, baidu.Expired, remotePath, int64(len(f.data)), 64<<20, nil)
+		if err != nil {
+			return "", err
+		}
+		if gs := md5.Sum(got); hex.EncodeToString(gs[:]) != f.sum {
+			return "", fmt.Errorf("续传后的内容不一致")
+		}
+		ok = true
+		return fmt.Sprintf("先传 %d/%d 块，续传后内容一致", before, len(saved.Parts)), nil
+	})
+	return f, ok
 }
 
 func (r *run) listing(files []local) {

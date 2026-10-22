@@ -1,10 +1,13 @@
 package fakepan
 
 import (
+	"crypto/md5"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net/http"
 	"path"
+	"strconv"
 	"strings"
 )
 
@@ -24,10 +27,13 @@ func (s *Server) opsRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/upload", s.upload)
 }
 
-// upload stores the request's body as a file, as the netdisk's uploads end.
+// upload takes an upload as the netdisk does, in parts: ?id&part=i keeps
+// the body as part i of upload id, and ?id&path&parts=n joins the n parts
+// into the file at path. Ids the server does not know start afresh.
 func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
 	// A speed probe's parts, never joined into a file.
-	if r.URL.Query().Has("probe") {
+	if q.Has("probe") {
 		io.Copy(io.Discard, r.Body)
 		return
 	}
@@ -38,13 +44,47 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	p := path.Clean("/" + r.URL.Query().Get("path"))
+	if s.uploads == nil {
+		s.uploads = map[string]map[int][]byte{}
+	}
+	id := q.Get("id")
+	if q.Has("part") {
+		i, _ := strconv.Atoi(q.Get("part"))
+		if s.uploads[id] == nil {
+			s.uploads[id] = map[int][]byte{}
+		}
+		s.uploads[id][i] = data
+		sum := md5.Sum(data)
+		writeJSON(w, map[string]any{"errno": 0, "md5": hex.EncodeToString(sum[:])})
+		return
+	}
+	n, _ := strconv.Atoi(q.Get("parts"))
+	parts := s.uploads[id]
+	var whole []byte
+	for i := range n {
+		part, ok := parts[i]
+		if !ok {
+			http.Error(w, "part missing", http.StatusBadRequest)
+			return
+		}
+		whole = append(whole, part...)
+	}
+	delete(s.uploads, id)
+	p := path.Clean("/" + q.Get("path"))
 	cat := 6
 	if strings.HasSuffix(p, ".png") || strings.HasSuffix(p, ".jpg") {
 		cat = 3
 	}
-	s.add(Node{Path: p, Data: data, Category: cat})
+	s.add(Node{Path: p, Data: whole, Category: cat})
 	writeJSON(w, map[string]any{"errno": 0})
+}
+
+// DropUploads forgets the parts of every upload not joined, as the
+// netdisk does of uploads left too long.
+func (s *Server) DropUploads() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.uploads = nil
 }
 
 // Data returns the content of a file of the fake netdisk.
