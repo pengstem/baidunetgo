@@ -233,6 +233,9 @@ func (a *App) signOut() {
 		a.settings.save()
 	}
 	a.onSignedOut()
+	if !a.fake {
+		a.forgetThumbs() // another account may sign in
+	}
 	a.sess = nil
 	a.login = loginState{}
 	a.phase = phaseLogin

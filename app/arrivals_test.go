@@ -106,7 +106,7 @@ func TestDeleteKeepsThumbnails(t *testing.T) {
 	for len(shown) < 4 && time.Now().Before(deadline) {
 		settleFor(tt, 100*time.Millisecond)
 		for _, f := range l.files {
-			if bmp := a.thumb(&f); bmp != nil {
+			if bmp := a.thumb(&f, 124); bmp != nil {
 				shown[f.FsID] = bmp
 			}
 		}
@@ -124,7 +124,7 @@ func TestDeleteKeepsThumbnails(t *testing.T) {
 	}
 	for _, f := range l.files {
 		if was := shown[f.FsID]; was != nil && f.Name != "IMG_2310.jpg" {
-			if bmp := a.thumb(&f); bmp != was {
+			if bmp := a.thumb(&f, 124); bmp != was {
 				t.Fatalf("%s lost its thumbnail when the folder was read again", f.Name)
 			}
 		}

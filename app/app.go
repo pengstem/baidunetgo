@@ -149,6 +149,9 @@ func (a *App) View(c *ui.Context) {
 	if a.win == nil {
 		a.runQueued(c)
 	}
+	if a.thumbs != nil {
+		a.thumbs.frame.Add(1)
+	}
 	a.passTime(c.Now())
 	if a.moving() {
 		c.Invalidate()

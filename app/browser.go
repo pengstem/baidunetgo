@@ -262,7 +262,7 @@ func (a *App) fileGrid(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 		tile.Children(func() {
 			box := ui.Box(c).Width(124).Height(112).Radius(8).Center().Clip()
 			k := kindOf(f)
-			if bmp := a.thumb(f); bmp != nil {
+			if bmp := a.thumb(f, 124); bmp != nil {
 				box.Children(func() {
 					if a.previewing(f) {
 						return // the preview shows it, grown from here
@@ -359,7 +359,7 @@ func (a *App) tileName(c *ui.Context, name string) string {
 func (a *App) fileIcon(c *ui.Context, t *ui.Theme, p *palette, f *baidu.File, size float32) {
 	k := kindOf(f)
 	if k.hasThumb() {
-		if bmp := a.thumb(f); bmp != nil {
+		if bmp := a.thumb(f, size); bmp != nil {
 			ui.Box(c).Size(size, size).Radius(3).Clip().Children(func() {
 				if a.previewing(f) {
 					return

@@ -1,6 +1,7 @@
 package baidu
 
 import (
+	"cmp"
 	"context"
 	"net/url"
 	"path"
@@ -20,8 +21,10 @@ type File struct {
 	Mtime    int64  `json:"server_mtime"`
 	MD5      string `json:"md5"` // of the content, as the netdisk tells it
 	Category int    `json:"category"`
-	// Thumb is the URL of a thumbnail, for pictures and videos.
-	Thumb string `json:"-"`
+	// Thumb is the URL of a thumbnail, for pictures and videos, about
+	// 360×270; ThumbSmall of one about 140×90.
+	Thumb      string `json:"-"`
+	ThumbSmall string `json:"-"`
 }
 
 // Categories of files, as the netdisk sorts them.
@@ -53,14 +56,8 @@ func (r rawFile) file() File {
 	if f.Name == "" {
 		f.Name = path.Base(f.Path)
 	}
-	switch {
-	case r.Thumbs.URL3 != "":
-		f.Thumb = r.Thumbs.URL3
-	case r.Thumbs.URL2 != "":
-		f.Thumb = r.Thumbs.URL2
-	default:
-		f.Thumb = r.Thumbs.URL1
-	}
+	f.Thumb = cmp.Or(r.Thumbs.URL2, r.Thumbs.URL3, r.Thumbs.URL1)
+	f.ThumbSmall = cmp.Or(r.Thumbs.URL1, f.Thumb)
 	return f
 }
 
