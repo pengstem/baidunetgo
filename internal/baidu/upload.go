@@ -20,6 +20,9 @@ import (
 // ErrExists is what Upload returns when the same file is there already.
 var ErrExists = pcsport.ErrExists
 
+// ErrNoSpace is what Upload returns when the netdisk is full.
+var ErrNoSpace = pcsport.ErrNoSpace
+
 // UploadState is how far an upload went, to go on with it.
 type UploadState = pcsport.Resume
 

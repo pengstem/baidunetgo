@@ -50,6 +50,11 @@ func (a *App) startTransfers() {
 	m.OnFinish = func(t transfer.Task) {
 		a.update(func() { a.finished(t) })
 	}
+	m.OnSkip = func(dir string, err error) {
+		a.update(func() {
+			a.toast("无法读取「"+path.Base(dir)+"」，其中的文件没有加入下载："+err.Error(), "error")
+		})
+	}
 	a.xfer = m
 	a.transfers.tasks = m.Tasks()
 	a.holdTransfers()
@@ -247,6 +252,11 @@ func (a *App) transfersPage(c *ui.Context, t *ui.Theme, p *palette) {
 	if x.tab == 1 {
 		shown = done
 	}
+	reading := a.xfer != nil && a.xfer.Reading() > 0 && x.tab == 0
+	if len(shown) == 0 && reading {
+		ui.Column(c).Grow(1).Center().Children(func() { ui.Spinner(c).Label("正在读取文件夹") })
+		return
+	}
 	if len(shown) == 0 {
 		if x.tab == 0 {
 			emptyState(c, t, p, "arrow-up-down", "没有正在进行的传输", "下载或上传的文件会出现在这里", nil)
@@ -259,6 +269,12 @@ func (a *App) transfersPage(c *ui.Context, t *ui.Theme, p *palette) {
 	ui.Column(c).Grow(1).Children(func() {
 		if x.tab == 0 {
 			a.speedCard(c, t, p)
+		}
+		if reading {
+			ui.Row(c).Gap(8).PaddingX(20).AlignItems(ui.Center).Children(func() {
+				ui.Spinner(c)
+				ui.Text(c, "正在读取文件夹，其中的文件会陆续加入").FontSize(12).TextColor(t.TextMuted)
+			})
 		}
 		ui.List(c, &x.list, len(shown), func(i int) {
 			a.transferRow(c, t, p, shown[i], i)
@@ -366,6 +382,8 @@ func (a *App) transferRow(c *ui.Context, t *ui.Theme, p *palette, task transfer.
 			detail := figure(c, transferDetail(task)).FontSize(12).TextColor(t.TextMuted).Shrink(1)
 			if task.State == transfer.Failed {
 				detail.TextColor(t.Danger)
+			} else if task.State == transfer.Queued && task.Retries > 0 {
+				detail.TextColor(t.Warning)
 			}
 			ui.Row(c).Gap(0).Children(func() { a.transferActions(c, t, p, task) })
 		})
@@ -405,6 +423,9 @@ func transferDetail(task transfer.Task) string {
 	sizes := humanSize(task.Done) + " / " + humanSize(task.Size)
 	switch task.State {
 	case transfer.Queued:
+		if task.Retries > 0 {
+			return "稍后重试（" + itoa(task.Retries) + "/5）：" + task.Err
+		}
 		return "等待中 · " + sizes
 	case transfer.Paused:
 		return "已暂停 · " + sizes

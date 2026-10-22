@@ -118,7 +118,7 @@ func upload(ctx context.Context, nd disk, f io.ReaderAt, size, mtime int64, para
 	resumed := r.ID != ""
 	for {
 		err := send(ctx, nd, f, &r, block, parallel, progress, note)
-		if err == nil || !resumed || ctx.Err() != nil || errors.Is(err, ErrExists) || errors.Is(err, errNoSpace) {
+		if err == nil || !resumed || ctx.Err() != nil || errors.Is(err, ErrExists) || errors.Is(err, ErrNoSpace) {
 			return err
 		}
 		// The netdisk may have let go of an upload left too long: start
@@ -129,7 +129,8 @@ func upload(ctx context.Context, nd disk, f io.ReaderAt, size, mtime int64, para
 	}
 }
 
-var errNoSpace = errors.New("网盘空间不足")
+// ErrNoSpace is what Upload returns when the netdisk is full.
+var ErrNoSpace = errors.New("网盘空间不足")
 
 // send links the file or sends the parts the netdisk lacks, then joins
 // them.
@@ -282,7 +283,7 @@ func (d *pcsDisk) precreate(f io.ReaderAt, r *Resume, id string) (bool, string, 
 		case 114514, 1919810:
 			return false, "", ErrExists
 		case 31112:
-			return false, "", errNoSpace
+			return false, "", ErrNoSpace
 		}
 		return false, "", fmt.Errorf("上传失败：%w", perr)
 	}

@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"math/rand"
 	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -293,5 +295,86 @@ func TestUploadDropped(t *testing.T) {
 	wait(t, m, Done)
 	if !bytes.Equal(srv.Data("/大.bin"), data) {
 		t.Fatal("content differs")
+	}
+}
+
+// flaky fails the uploads it is given errors for, one error a try.
+type flaky struct {
+	*counting
+	mu   sync.Mutex
+	errs []error
+	list map[string]error // folders that cannot be listed
+}
+
+func (f *flaky) Upload(ctx context.Context, local, remote string, parallel int, progress func(done, total int64), from *baidu.UploadState, note func(baidu.UploadState)) error {
+	f.mu.Lock()
+	var err error
+	if len(f.errs) > 0 {
+		err, f.errs = f.errs[0], f.errs[1:]
+	}
+	f.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	return f.counting.Upload(ctx, local, remote, parallel, progress, from, note)
+}
+
+func (f *flaky) List(ctx context.Context, dir string, o baidu.Order) ([]baidu.File, error) {
+	if err := f.list[dir]; err != nil {
+		return nil, err
+	}
+	return f.counting.List(ctx, dir, o)
+}
+
+func TestRetriesByItself(t *testing.T) {
+	defer func(d []time.Duration) { retryDelays = d }(retryDelays)
+	retryDelays = []time.Duration{50 * time.Millisecond, 50 * time.Millisecond}
+	srv, c, _ := setup(t)
+	dir := t.TempDir()
+	local := filepath.Join(dir, "a.txt")
+	os.WriteFile(local, []byte("hello"), 0o644)
+	f := &flaky{counting: c, errs: []error{errors.New("connection reset by peer")}}
+	m := New(f, baidu.Expired, "")
+	defer m.Close()
+	m.AddUploads([]string{local}, "/", nil)
+	task := wait(t, m, Done)
+	if string(srv.Data("/a.txt")) != "hello" || task.Retries != 1 {
+		t.Fatalf("retries %d, data %q", task.Retries, srv.Data("/a.txt"))
+	}
+
+	// What trying again cannot mend fails at once.
+	f.errs = []error{baidu.ErrNoSpace}
+	m.AddUploads([]string{local}, "/b", nil)
+	time.Sleep(100 * time.Millisecond)
+	for _, x := range m.Tasks() {
+		if x.Remote == "/b/a.txt" && (x.State != Failed || x.Retries != 0) {
+			t.Errorf("a full netdisk retried: %+v", x)
+		}
+	}
+}
+
+func TestFolderListFails(t *testing.T) {
+	_, c, _ := setup(t)
+	f := &flaky{counting: c, list: map[string]error{"/照片/京都": baidu.ErrNotLoggedIn}}
+	m := New(f, baidu.Expired, "")
+	defer m.Close()
+	var skipped []string
+	var mu sync.Mutex
+	m.OnSkip = func(dir string, err error) { mu.Lock(); skipped = append(skipped, dir); mu.Unlock() }
+	m.Hold() // queue only
+	m.AddDownloads([]baidu.File{{Path: "/照片", Name: "照片", IsDir: true}}, t.TempDir())
+	deadline := time.Now().Add(5 * time.Second)
+	for (len(m.Tasks()) == 0 || m.Reading() > 0) && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if !slices.Equal(skipped, []string{"/照片/京都"}) || len(m.Tasks()) == 0 {
+		t.Errorf("skipped %v, %d tasks", skipped, len(m.Tasks()))
+	}
+	for _, x := range m.Tasks() {
+		if strings.HasPrefix(x.Remote, "/照片/京都/") {
+			t.Errorf("queued from the folder that failed: %s", x.Remote)
+		}
 	}
 }

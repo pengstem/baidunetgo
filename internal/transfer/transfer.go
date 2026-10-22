@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/pengstem/baidunetgo/internal/baidu"
@@ -63,6 +64,10 @@ type Task struct {
 	Finished time.Time `json:"finished,omitzero"`
 	// Resume is how far an upload went, to go on from there.
 	Resume *baidu.UploadState `json:"resume,omitempty"`
+	// Retries counts the times the task failed and was queued again by
+	// itself; RetryAt is when it may start again.
+	Retries int       `json:"retries,omitempty"`
+	RetryAt time.Time `json:"-"`
 	// Speed is bytes a second, while it runs.
 	Speed float64 `json:"-"`
 
@@ -86,6 +91,9 @@ type Manager struct {
 	OnChange func()
 	// OnFinish is called as a task ends, done or failed.
 	OnFinish func(t Task)
+	// OnSkip is told of folders whose files could not be listed to
+	// download, with why.
+	OnSkip func(dir string, err error)
 
 	mu      sync.Mutex
 	tasks   []*Task
@@ -93,6 +101,28 @@ type Manager struct {
 	closed  bool
 	holding bool // Hold: nothing starts
 	stop    chan struct{}
+	reading atomic.Int32 // folders being listed to download
+}
+
+// Reading reports how many folders are being listed to download.
+func (m *Manager) Reading() int { return int(m.reading.Load()) }
+
+// retryDelays are how long a task that failed waits before it is queued
+// again by itself, the first time, the second and so on.
+var retryDelays = []time.Duration{5 * time.Second, 20 * time.Second, time.Minute, 3 * time.Minute, 5 * time.Minute}
+
+const maxRetries = 5
+
+// retryable tells errors that trying again may get past, as a connection
+// that broke, from those it will not: the session expired, the netdisk or
+// the disk full, the local file gone.
+func retryable(err error) bool {
+	for _, e := range []error{baidu.ErrNotLoggedIn, baidu.ErrNoSpace, baidu.ErrExists, os.ErrNotExist, os.ErrPermission, syscall.ENOSPC} {
+		if errors.Is(err, e) {
+			return false
+		}
+	}
+	return true
 }
 
 // New makes a manager, loading the tasks saved at statePath ("" keeps
@@ -129,7 +159,7 @@ func (m *Manager) Tasks() []Task {
 
 func (t *Task) snapshot() Task {
 	return Task{ID: t.ID, Kind: t.Kind, Name: t.Name, Remote: t.Remote, Local: t.Local, Size: t.Size,
-		Done: t.done.Load(), State: t.State, Err: t.Err, Created: t.Created, Finished: t.Finished, Resume: t.Resume, Speed: t.Speed}
+		Done: t.done.Load(), State: t.State, Err: t.Err, Created: t.Created, Finished: t.Finished, Resume: t.Resume, Retries: t.Retries, RetryAt: t.RetryAt, Speed: t.Speed}
 }
 
 func (m *Manager) changed() {
@@ -177,10 +207,13 @@ func (m *Manager) AddDownloads(files []baidu.File, localDir string) {
 				continue
 			}
 			root := uniquePath(filepath.Join(localDir, f.Name), taken)
+			m.reading.Add(1)
+			m.changed()
 			m.walk(f.Path, func(sub baidu.File) {
 				rel := strings.TrimPrefix(sub.Path, f.Path+"/")
 				m.queueDownload(sub, filepath.Join(root, filepath.FromSlash(rel)), nil)
 			})
+			m.reading.Add(-1)
 		}
 		m.mu.Lock()
 		m.save()
@@ -199,19 +232,53 @@ func (m *Manager) queueDownload(f baidu.File, local string, taken map[string]boo
 	m.schedule()
 }
 
-// walk calls fn for every file under dir of the netdisk.
+// walkers is how many folders walk lists at once.
+const walkers = 4
+
+// walk calls fn, from one goroutine at a time, for every file under dir
+// of the netdisk, listing a few folders at once. A folder it cannot list,
+// even after trying again, goes to OnSkip.
 func (m *Manager) walk(dir string, fn func(baidu.File)) {
-	files, err := m.nd.List(context.Background(), dir, baidu.Order{By: "name"})
-	if err != nil {
-		return
-	}
-	for _, f := range files {
-		if f.IsDir {
-			m.walk(f.Path, fn)
-		} else {
-			fn(f)
+	var (
+		mu  sync.Mutex
+		wg  sync.WaitGroup
+		sem = make(chan struct{}, walkers)
+	)
+	var list func(dir string)
+	list = func(dir string) {
+		defer wg.Done()
+		sem <- struct{}{}
+		var files []baidu.File
+		var err error
+		for attempt := range 3 {
+			if attempt > 0 {
+				time.Sleep(time.Duration(attempt) * time.Second)
+			}
+			if files, err = m.nd.List(context.Background(), dir, baidu.Order{By: "name"}); err == nil || !retryable(err) {
+				break
+			}
+		}
+		<-sem
+		if err != nil {
+			if m.OnSkip != nil {
+				m.OnSkip(dir, err)
+			}
+			return
+		}
+		for _, f := range files {
+			if f.IsDir {
+				wg.Add(1)
+				go list(f.Path)
+			} else {
+				mu.Lock()
+				fn(f)
+				mu.Unlock()
+			}
 		}
 	}
+	wg.Add(1)
+	list(dir)
+	wg.Wait()
 }
 
 // uniquePath returns p, or p with a number before its extension when a
@@ -301,7 +368,7 @@ func (m *Manager) schedule() {
 		}
 		// A task still winding down from a pause starts again as its
 		// run ends, not beside it on the same file.
-		if t.State != Queued || t.cancel != nil {
+		if t.State != Queued || t.cancel != nil || t.RetryAt.After(time.Now()) {
 			continue
 		}
 		running++
@@ -343,6 +410,13 @@ func (m *Manager) run(ctx context.Context, t *Task) {
 	switch {
 	case ctx.Err() != nil:
 		// Paused or removed: whoever cancelled set the state.
+	case err != nil && t.Retries < maxRetries && retryable(err):
+		// It waits in the queue a while, then tries again from where it
+		// stopped.
+		t.Retries++
+		delay := retryDelays[min(t.Retries, len(retryDelays))-1]
+		t.State, t.Err, t.RetryAt = Queued, err.Error(), time.Now().Add(delay)
+		time.AfterFunc(delay, m.schedule)
 	case err != nil:
 		t.State, t.Err = Failed, err.Error()
 	default:
@@ -386,7 +460,7 @@ func (m *Manager) Pause(id int64) {
 func (m *Manager) Resume(id int64) {
 	m.mu.Lock()
 	if t := m.find(id); t != nil && (t.State == Paused || t.State == Failed) {
-		t.State, t.Err = Queued, ""
+		t.State, t.Err, t.Retries, t.RetryAt = Queued, "", 0, time.Time{}
 	}
 	m.mu.Unlock()
 	m.schedule()
