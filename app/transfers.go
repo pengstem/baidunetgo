@@ -438,6 +438,9 @@ func transferDetail(task transfer.Task) string {
 		}
 		return humanSize(task.Size) + " · " + where
 	}
+	if task.Verifying {
+		return "正在校验 · " + humanSize(task.Size)
+	}
 	s := sizes + " · " + humanSpeed(task.Speed)
 	if task.Speed > 0 && task.Size > task.Done {
 		s += " · 剩余 " + humanDuration(time.Duration(float64(task.Size-task.Done)/task.Speed)*time.Second)

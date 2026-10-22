@@ -378,3 +378,52 @@ func TestFolderListFails(t *testing.T) {
 		}
 	}
 }
+
+// TestDownloadVerified checks a download against the MD5 the netdisk
+// gives, downloading it afresh when it differs.
+func TestDownloadVerified(t *testing.T) {
+	defer func(d []time.Duration) { retryDelays = d }(retryDelays)
+	retryDelays = []time.Duration{10 * time.Millisecond}
+	srv, c, data := setup(t)
+	files, _ := c.List(context.Background(), "/", baidu.Order{})
+	i := slices.IndexFunc(files, func(f baidu.File) bool { return f.Name == "大文件.bin" })
+	if files[i].MD5 == "" {
+		t.Fatal("no MD5 listed")
+	}
+	dir := t.TempDir()
+	m := New(c, baidu.Expired, "")
+	defer m.Close()
+	m.AddDownloads(files[i:i+1], dir)
+	task := wait(t, m, Done)
+	if got, _ := os.ReadFile(task.Local); !bytes.Equal(got, data) {
+		t.Fatal("content differs")
+	}
+
+	// The netdisk's MD5 differs from what arrives: it fails, after trying
+	// again, and leaves no part behind.
+	srv.Add(fakepan.Node{Path: "/坏.bin", Data: data[:5<<20], MD5: "0123456789abcdef0123456789abcdef"})
+	files, _ = c.List(context.Background(), "/", baidu.Order{})
+	i = slices.IndexFunc(files, func(f baidu.File) bool { return f.Name == "坏.bin" })
+	m.ClearFinished()
+	m.AddDownloads(files[i:i+1], dir)
+	task = wait(t, m, Failed)
+	if task.Err != errCorrupt.Error() || task.Retries != maxRetries {
+		t.Errorf("failed with %q after %d retries", task.Err, task.Retries)
+	}
+	if _, err := os.Stat(task.Local + partExt); !os.IsNotExist(err) {
+		t.Error("the part is left")
+	}
+}
+
+func TestDownloadDiskFull(t *testing.T) {
+	defer func(f func(string) (int64, error)) { diskFree = f }(diskFree)
+	diskFree = func(string) (int64, error) { return 1 << 20, nil }
+	_, c, data := setup(t)
+	m := New(c, baidu.Expired, "")
+	defer m.Close()
+	m.AddDownloads([]baidu.File{{Path: "/大文件.bin", Name: "大文件.bin", Size: int64(len(data))}}, t.TempDir())
+	task := wait(t, m, Failed)
+	if task.Retries != 0 || !strings.Contains(task.Err, "磁盘空间不足") {
+		t.Errorf("%+v", task)
+	}
+}

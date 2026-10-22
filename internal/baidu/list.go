@@ -5,6 +5,8 @@ import (
 	"net/url"
 	"path"
 	"strconv"
+
+	"github.com/qjfoidnh/BaiduPCS-Go/baidupcs"
 )
 
 // File is a file or directory of the netdisk.
@@ -16,7 +18,7 @@ type File struct {
 	IsDir    bool   `json:"-"`
 	Ctime    int64  `json:"server_ctime"`
 	Mtime    int64  `json:"server_mtime"`
-	MD5      string `json:"md5"`
+	MD5      string `json:"md5"` // of the content, as the netdisk tells it
 	Category int    `json:"category"`
 	// Thumb is the URL of a thumbnail, for pictures and videos.
 	Thumb string `json:"-"`
@@ -47,6 +49,7 @@ type rawFile struct {
 func (r rawFile) file() File {
 	f := r.File
 	f.IsDir = r.IsDirInt == 1
+	f.MD5 = baidupcs.DecryptMD5(f.MD5) // listed scrambled
 	if f.Name == "" {
 		f.Name = path.Base(f.Path)
 	}

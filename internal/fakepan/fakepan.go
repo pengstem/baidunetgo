@@ -6,6 +6,8 @@ package fakepan
 
 import (
 	"bytes"
+	"crypto/md5"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"image"
@@ -33,6 +35,36 @@ type Node struct {
 	Mtime    int64
 	Data     []byte // content of a file
 	Size     int64  // size of a file without Data
+	// MD5 is what the netdisk says the content's MD5 is, the true one of
+	// Data when "".
+	MD5 string
+}
+
+// md5Of returns the MD5 the netdisk tells of a file with Data, "" for
+// those without.
+func (n *Node) md5Of() string {
+	if n.MD5 != "" || n.Data == nil {
+		return n.MD5
+	}
+	sum := md5.Sum(n.Data)
+	return hex.EncodeToString(sum[:])
+}
+
+// scramble hides an MD5 as /api/list does, which clients undo (see
+// baidupcs.DecryptMD5).
+func scramble(sum string) string {
+	if len(sum) != 32 {
+		return sum
+	}
+	mixed := sum[8:16] + sum[0:8] + sum[24:32] + sum[16:24]
+	out := []byte(mixed)
+	for i := range out {
+		v, _ := strconv.ParseUint(string(out[i]), 16, 8)
+		out[i] = strconv.FormatUint(v^uint64(i&15), 16)[0]
+	}
+	v, _ := strconv.ParseUint(string(out[9]), 16, 8)
+	out[9] = byte('g' + v)
+	return string(out)
 }
 
 // Server is the fake netdisk.
@@ -196,6 +228,9 @@ func (s *Server) entry(n *Node) map[string]any {
 		"size": n.Size, "isdir": b2i(n.IsDir), "server_mtime": n.Mtime, "server_ctime": n.Mtime,
 		"category": n.Category,
 	}
+	if sum := n.md5Of(); sum != "" {
+		e["md5"] = scramble(sum)
+	}
 	if n.Category == 3 || n.Category == 1 {
 		// Signed afresh with every listing, as the netdisk's are.
 		u := s.URL + "/thumb?id=" + strconv.FormatInt(n.FsID, 10) + "&sign=" + strconv.FormatInt(time.Now().UnixNano(), 36)
@@ -279,6 +314,9 @@ func (s *Server) file(w http.ResponseWriter, r *http.Request) {
 	if a, b, ok := strings.Cut(strings.TrimPrefix(rng, "bytes="), "-"); !ok || a == "" || b == "" {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
+	}
+	if sum := n.md5Of(); sum != "" {
+		w.Header().Set("Content-MD5", sum)
 	}
 	var content io.ReadSeeker = bytes.NewReader(n.Data)
 	if n.Data == nil {

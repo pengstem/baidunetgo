@@ -62,6 +62,10 @@ type Task struct {
 	Err      string    `json:"err,omitempty"`
 	Created  time.Time `json:"created"`
 	Finished time.Time `json:"finished,omitzero"`
+	// MD5 is the content's, as the netdisk lists it, to check a download.
+	MD5 string `json:"md5,omitempty"`
+	// Verifying is set while a download's content is being checked.
+	Verifying bool `json:"-"`
 	// Resume is how far an upload went, to go on from there.
 	Resume *baidu.UploadState `json:"resume,omitempty"`
 	// Retries counts the times the task failed and was queued again by
@@ -159,7 +163,7 @@ func (m *Manager) Tasks() []Task {
 
 func (t *Task) snapshot() Task {
 	return Task{ID: t.ID, Kind: t.Kind, Name: t.Name, Remote: t.Remote, Local: t.Local, Size: t.Size,
-		Done: t.done.Load(), State: t.State, Err: t.Err, Created: t.Created, Finished: t.Finished, Resume: t.Resume, Retries: t.Retries, RetryAt: t.RetryAt, Speed: t.Speed}
+		Done: t.done.Load(), State: t.State, Err: t.Err, Created: t.Created, Finished: t.Finished, MD5: t.MD5, Verifying: t.Verifying, Resume: t.Resume, Retries: t.Retries, RetryAt: t.RetryAt, Speed: t.Speed}
 }
 
 func (m *Manager) changed() {
@@ -227,7 +231,7 @@ func (m *Manager) queueDownload(f baidu.File, local string, taken map[string]boo
 		local = uniquePath(local, taken)
 	}
 	m.mu.Lock()
-	m.add(&Task{Kind: Download, Name: f.Name, Remote: f.Path, Local: local, Size: f.Size})
+	m.add(&Task{Kind: Download, Name: f.Name, Remote: f.Path, Local: local, Size: f.Size, MD5: f.MD5})
 	m.mu.Unlock()
 	m.schedule()
 }
