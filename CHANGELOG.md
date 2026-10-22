@@ -4,6 +4,12 @@
 
 <!-- 写在这里的内容会成为下一个版本的更新说明；留空则按提交记录自动生成。 -->
 
+## [0.4.19] - 2026-10-22
+
+### 改进
+
+- Have the self-test download its file as listed, so the download is checked against the netdisk's MD5 as the app's are, and fail when the listed MD5 is not the content's
+
 ## [0.4.18] - 2026-10-22
 
 ### 新增
