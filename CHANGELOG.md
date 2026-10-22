@@ -4,6 +4,12 @@
 
 <!-- 写在这里的内容会成为下一个版本的更新说明；留空则按提交记录自动生成。 -->
 
+## [0.4.13] - 2026-10-22
+
+### 改进
+
+- Go on with an upload paused, failed or left when the app quit from the parts the netdisk already has, keeping its checksums and upload id in transfers.json, where it started over and read the whole file again; an upload the netdisk let go of starts afresh, and the self-test checks a resumed upload against the real netdisk
+
 ## [0.4.12] - 2026-10-22
 
 ### 改进
