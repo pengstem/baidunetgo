@@ -113,30 +113,51 @@ func (c *Client) List(ctx context.Context, dir string, o Order) ([]File, error) 
 	return all, nil
 }
 
-// Search finds files whose names contain key under dir, recursively.
-func (c *Client) Search(ctx context.Context, dir, key string) ([]File, error) {
-	ctx, cancel := timeout(ctx)
-	defer cancel()
-	var res struct {
-		List []rawFile `json:"list"`
+// searchPage is how many results a search asks for at a time, and
+// searchPages how many times at most.
+const (
+	searchPage  = 500
+	searchPages = 6
+)
+
+// Search finds files whose names contain key under dir, recursively,
+// reading the results page by page; more reports that there were more
+// than it read.
+func (c *Client) Search(ctx context.Context, dir, key string) (files []File, more bool, err error) {
+	seen := map[int64]bool{}
+	for page := 1; page <= searchPages; page++ {
+		pctx, cancel := timeout(ctx)
+		var res struct {
+			List    []rawFile `json:"list"`
+			HasMore int       `json:"has_more"`
+		}
+		q := url.Values{
+			"dir":        {dir},
+			"key":        {key},
+			"recursion":  {"1"},
+			"clienttype": {"0"},
+			"web":        {"1"},
+			"num":        {strconv.Itoa(searchPage)},
+			"page":       {strconv.Itoa(page)},
+		}
+		err := c.getJSON(pctx, "搜索", "/api/search", q, &res)
+		cancel()
+		if err != nil {
+			return nil, false, err
+		}
+		fresh := 0
+		for _, r := range res.List {
+			if !seen[r.FsID] {
+				seen[r.FsID] = true
+				fresh++
+				files = append(files, r.file())
+			}
+		}
+		if len(res.List) < searchPage || fresh == 0 {
+			return files, false, nil
+		}
 	}
-	q := url.Values{
-		"dir":        {dir},
-		"key":        {key},
-		"recursion":  {"1"},
-		"clienttype": {"0"},
-		"web":        {"1"},
-		"num":        {"500"},
-		"page":       {"1"},
-	}
-	if err := c.getJSON(ctx, "搜索", "/api/search", q, &res); err != nil {
-		return nil, err
-	}
-	files := make([]File, len(res.List))
-	for i, r := range res.List {
-		files[i] = r.file()
-	}
-	return files, nil
+	return files, true, nil
 }
 
 func boolStr(b bool) string {

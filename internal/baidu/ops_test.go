@@ -2,6 +2,7 @@ package baidu_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/pengstem/baidunetgo/internal/baidu"
@@ -43,5 +44,26 @@ func TestOps(t *testing.T) {
 	}
 	if err := c.Mkdir(ctx, "/新的"); err == nil {
 		t.Error("mkdir over a name taken succeeded")
+	}
+}
+
+// TestSearchPages reads every page of the results, up to a bound.
+func TestSearchPages(t *testing.T) {
+	srv := fakepan.New()
+	defer srv.Close()
+	for i := range 1234 {
+		srv.Add(fakepan.Node{Path: fmt.Sprintf("/批量/文件-%04d.txt", i), Data: []byte("x")})
+	}
+	c := baidu.OpenAt(baidu.Credentials{BDUSS: "x", UID: 1}, srv.URL)
+	got, more, err := c.Search(context.Background(), "/", "文件-")
+	if err != nil || len(got) != 1234 || more {
+		t.Fatalf("%d results, more %v, %v", len(got), more, err)
+	}
+	for i := range 2500 {
+		srv.Add(fakepan.Node{Path: fmt.Sprintf("/更多/文件-%04d.bin", i), Data: []byte("x")})
+	}
+	got, more, _ = c.Search(context.Background(), "/", "文件-")
+	if len(got) != 3000 || !more {
+		t.Errorf("%d results, more %v", len(got), more)
 	}
 }

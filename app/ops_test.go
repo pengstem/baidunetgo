@@ -7,6 +7,7 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"github.com/pengstem/baidunetgo/internal/baidu"
+	"github.com/pengstem/baidunetgo/internal/fakepan"
 )
 
 // settle builds frames until the netdisk has answered and animations end.
@@ -109,11 +110,24 @@ func TestMoveWithPicker(t *testing.T) {
 }
 
 func TestSearch(t *testing.T) {
-	a, tt, _ := signedIn(t)
+	a, tt, srv := signedIn(t)
 	a.search("img_231")
 	waitFor(t, tt, "找到 10 个结果")
 	tt.Advance(500 * time.Millisecond)
 	save(t, tt, "search")
+
+	// From a folder, the search can keep to it.
+	srv.Add(fakepan.Node{Path: "/文档/img_2319-副本.txt", Data: []byte("x")})
+	a.router.Push(filesRoute("/照片"))
+	waitFor(t, tt, "IMG_2310.jpg")
+	a.search("img_231")
+	waitFor(t, tt, "找到 11 个结果")
+	if err := tt.Click("「照片」"); err != nil {
+		t.Fatalf("no scope switch: %v; %q", err, tt.Texts())
+	}
+	waitFor(t, tt, "在「照片」中找到 10 个结果")
+	tt.Advance(500 * time.Millisecond)
+	save(t, tt, "search-in-folder")
 }
 
 // TestNarrowSelectionBar keeps the selection bar on one line in the

@@ -319,7 +319,14 @@ func (a *App) subtitle() string {
 		}
 	case "/search":
 		if !a.found.loading && a.found.err == "" {
-			return "找到 " + itoa(len(a.found.results)) + " 个结果"
+			where := ""
+			if a.found.in != "/" {
+				where = "在「" + dirLabel(a.found.in) + "」中"
+			}
+			if a.found.more {
+				return where + "找到超过 " + itoa(len(a.found.results)) + " 个结果，只列出这些"
+			}
+			return where + "找到 " + itoa(len(a.found.results)) + " 个结果"
 		}
 	case "/settings":
 		return "BaiduNetGo " + version()

@@ -270,13 +270,25 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 	defer s.mu.Unlock()
 	key := strings.ToLower(r.URL.Query().Get("key"))
 	dir := path.Clean("/" + r.URL.Query().Get("dir"))
-	var list []map[string]any
-	for p, n := range s.nodes {
+	var found []string
+	for p := range s.nodes {
 		if p != "/" && strings.HasPrefix(p, strings.TrimSuffix(dir, "/")+"/") && strings.Contains(strings.ToLower(path.Base(p)), key) {
-			list = append(list, s.entry(n))
+			found = append(found, p)
 		}
 	}
-	writeJSON(w, map[string]any{"errno": 0, "list": list})
+	// In pages, as the netdisk gives them.
+	slices.Sort(found)
+	num, _ := strconv.Atoi(r.URL.Query().Get("num"))
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	if num <= 0 {
+		num = 100
+	}
+	from := min(max(page-1, 0)*num, len(found))
+	list := []map[string]any{}
+	for _, p := range found[from:min(from+num, len(found))] {
+		list = append(list, s.entry(s.nodes[p]))
+	}
+	writeJSON(w, map[string]any{"errno": 0, "list": list, "has_more": b2i(from+num < len(found))})
 }
 
 func (s *Server) byID(id int64) *Node {

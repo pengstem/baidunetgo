@@ -13,29 +13,48 @@ import (
 // searchState is the results of the last search.
 type searchState struct {
 	query   string
+	in      string // the folder searched, "/" for the whole netdisk
 	results []baidu.File
+	more    bool // there were more results than it read
 	loading bool
 	err     string
 	list    ui.ListState
+	scope   int // what the scope switch shows: the whole netdisk, or the folder
 }
 
-// search finds files across the netdisk.
+// search finds files across the netdisk. Searched from a folder, it can
+// look in that folder only, a switch away.
 func (a *App) search(q string) {
 	if q == "" {
 		return
 	}
-	a.router.Push("/search?" + url.Values{"q": {q}}.Encode())
+	v := url.Values{"q": {q}}
+	if dir := a.currentDir(); dir != "" && dir != "/" {
+		v.Set("from", dir)
+	} else if a.router.Path() == "/search" {
+		for _, k := range []string{"from", "in"} {
+			if x := a.router.Query(k); x != "" {
+				v.Set(k, x)
+			}
+		}
+	}
+	a.found.query = "" // searched again, even for the same words
+	a.router.Push("/search?" + v.Encode())
 }
 
 func (a *App) searchPage(c *ui.Context, t *ui.Theme, p *palette, q string) {
 	s := &a.found
-	if s.query != q && a.sess != nil {
-		s.query, s.results, s.loading, s.err = q, nil, true, ""
+	from, in := a.router.Query("from"), a.router.Query("in")
+	if in == "" {
+		in = "/"
+	}
+	if (s.query != q || s.in != in) && a.sess != nil {
+		s.query, s.in, s.results, s.more, s.loading, s.err = q, in, nil, false, true, ""
 		client := a.sess.client
 		go func() {
-			res, err := client.Search(context.Background(), "/", q)
+			res, more, err := client.Search(context.Background(), in, q)
 			a.update(func() {
-				if s.query != q {
+				if s.query != q || s.in != in {
 					return
 				}
 				s.loading = false
@@ -44,9 +63,26 @@ func (a *App) searchPage(c *ui.Context, t *ui.Theme, p *palette, q string) {
 					return
 				}
 				sortFiles(res, baidu.Order{By: "name"})
-				s.results = res
+				s.results, s.more = res, more
 			})
 		}()
+	}
+	if from != "" {
+		s.scope = 0
+		if in != "/" {
+			s.scope = 1
+		}
+		was := s.scope
+		ui.Row(c).Padding(8, 10, 0).Children(func() {
+			segmented(c, t, p, &s.scope, "整个网盘", "「"+dirLabel(from)+"」").Width(260)
+		})
+		if s.scope != was {
+			v := url.Values{"q": {q}, "from": {from}}
+			if s.scope == 1 {
+				v.Set("in", from)
+			}
+			a.router.Replace("/search?" + v.Encode())
+		}
 	}
 	ui.Column(c).Grow(1).Children(func() {
 		switch {

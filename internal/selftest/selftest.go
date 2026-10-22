@@ -250,7 +250,7 @@ func (r *run) listing(files []local) {
 		return fmt.Sprintf("%d 项，%d 个有缩略图", len(got), thumbs), nil
 	})
 	r.check("搜索", func() (string, error) {
-		got, err := r.c.Search(r.ctx, r.box, "随机数据")
+		got, _, err := r.c.Search(r.ctx, r.box, "随机数据")
 		if err != nil {
 			return "", err
 		}
