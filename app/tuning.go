@@ -178,6 +178,21 @@ func (a *App) tuneSection(c *ui.Context, t *ui.Theme, p *palette) {
 				manual()
 			}
 		})
+		limit := func(name, what string, mbps *int) {
+			v := float64(*mbps)
+			detail := "不限速"
+			if *mbps > 0 {
+				detail = "所有" + what + "加起来最多 " + itoa(*mbps) + " MB/s"
+			}
+			settingRow(c, t, p, name, detail, func() {
+				if numberField(c, t, p, &v, 0, 1000, 1, "MB/s", name+"（MB/s，0 为不限）") {
+					*mbps = int(v)
+					a.applySettings()
+				}
+			})
+		}
+		limit("下载限速", "下载", &s.DownLimit)
+		limit("上传限速", "上传", &s.UpLimit)
 	})
 }
 

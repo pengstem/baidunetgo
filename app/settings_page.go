@@ -31,6 +31,7 @@ func (a *App) useSettings() {
 	cfg := a.transferConfig()
 	if a.xfer != nil {
 		a.xfer.Threads, a.xfer.Parallel, a.xfer.Upload, a.xfer.Block = cfg.Threads, cfg.Parallel, cfg.Upload, cfg.Block
+		a.xfer.SetLimits(int64(a.settings.DownLimit)<<20, int64(a.settings.UpLimit)<<20)
 	}
 	if a.sess != nil {
 		a.sess.client.SetHosts(cfg.Hosts)

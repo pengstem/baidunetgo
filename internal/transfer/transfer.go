@@ -109,6 +109,15 @@ type Manager struct {
 
 	noteMu      sync.Mutex
 	notePending bool // OnChange is due
+
+	down, up limiter
+}
+
+// SetLimits caps the speed of all downloads together and of all uploads
+// together, in bytes a second; 0 is no cap.
+func (m *Manager) SetLimits(down, up int64) {
+	m.down.set(down)
+	m.up.set(up)
 }
 
 // Reading reports how many folders are being listed to download.
@@ -424,8 +433,19 @@ func (m *Manager) run(ctx context.Context, t *Task) {
 		m.mu.Lock()
 		from := t.Resume
 		m.mu.Unlock()
+		var (
+			pmu  sync.Mutex
+			sent int64
+		)
 		err = m.nd.Upload(ctx, t.Local, t.Remote, m.Upload, func(done, total int64) {
 			t.done.Store(done)
+			// The upload reads on as this returns: holding it back
+			// holds the upload to the limit.
+			pmu.Lock()
+			d := done - sent
+			sent = max(sent, done)
+			pmu.Unlock()
+			m.up.wait(ctx, d)
 			if total > 0 {
 				m.mu.Lock()
 				t.Size = total

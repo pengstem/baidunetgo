@@ -427,3 +427,51 @@ func TestDownloadDiskFull(t *testing.T) {
 		t.Errorf("%+v", task)
 	}
 }
+
+// TestSpeedLimit holds a download to the speed set.
+func TestSpeedLimit(t *testing.T) {
+	_, c, data := setup(t)
+	m := New(c, baidu.Expired, "")
+	defer m.Close()
+	m.Threads = 4
+	rate := int64(len(data)) // the file in a second
+	m.SetLimits(rate, 0)
+	start := time.Now()
+	m.AddDownloads([]baidu.File{{Path: "/大文件.bin", Name: "大文件.bin", Size: int64(len(data))}}, t.TempDir())
+	wait(t, m, Done)
+	if el := time.Since(start); el < 900*time.Millisecond {
+		t.Errorf("took %v at %d B/s for %d bytes", el, rate, len(data))
+	}
+}
+
+func TestLimiter(t *testing.T) {
+	var l limiter
+	l.set(1 << 20)
+	start := time.Now()
+	for range 8 {
+		l.wait(context.Background(), 128<<10)
+	}
+	if el := time.Since(start); el < 900*time.Millisecond || el > 1500*time.Millisecond {
+		t.Errorf("1 MB at 1 MB/s took %v", el)
+	}
+}
+
+// TestUploadSpeedLimit holds an upload to the speed set.
+func TestUploadSpeedLimit(t *testing.T) {
+	srv, c, _ := setup(t)
+	local := filepath.Join(t.TempDir(), "a.bin")
+	data := make([]byte, 2<<20)
+	os.WriteFile(local, data, 0o644)
+	m := New(c, baidu.Expired, "")
+	defer m.Close()
+	m.SetLimits(0, 2<<20) // the file in a second
+	start := time.Now()
+	m.AddUploads([]string{local}, "/", nil)
+	wait(t, m, Done)
+	if el := time.Since(start); el < 900*time.Millisecond {
+		t.Errorf("took %v", el)
+	}
+	if len(srv.Data("/a.bin")) != len(data) {
+		t.Error("not uploaded")
+	}
+}

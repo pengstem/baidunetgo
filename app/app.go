@@ -6,6 +6,7 @@ package app
 import (
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/egoist/mygo"
@@ -39,6 +40,8 @@ type App struct {
 	order       baidu.Order
 	gridView    bool
 	finding     bool              // Cmd-F asks for the search field
+	askingQuit  bool              // the question whether to quit is showing
+	quitOK      atomic.Bool       // the user said to quit while transfers go on
 	tileNames   map[string]string // names laid out for grid tiles (tileName)
 	gridSize    [2]float32        // the grid's tiles' width and its height, as last laid out
 	thumbs      *thumbs
@@ -101,7 +104,49 @@ func (a *App) Attach(win *mygo.Window) {
 	a.useSettings()
 	a.watchSystem()
 	win.OnFocus(func() { a.update(a.refocused) })
+	// Quitting, or closing the window, which quits, asks first while
+	// transfers go on.
+	mygo.App.OnBeforeQuit(func(e *mygo.QuitEvent) {
+		if a.askToQuit() {
+			e.PreventDefault()
+		}
+	})
+	win.OnClose(func(e *mygo.CloseEvent) {
+		if a.askToQuit() {
+			e.PreventDefault()
+		}
+	})
 	a.boot()
+}
+
+// askToQuit reports whether quitting must wait for the user, who is asked
+// whether to quit while transfers go on; quitting goes on if they say so.
+// It runs on the main thread.
+func (a *App) askToQuit() bool {
+	n := a.activeTransfers()
+	switch {
+	case n == 0 || a.quitOK.Load():
+		return false
+	case a.askingQuit:
+		return true
+	}
+	a.askingQuit = true
+	win := a.win
+	go func() {
+		r, err := mygo.Dialog.Message(mygo.MessageOptions{
+			Parent: win, Type: mygo.MessageWarning,
+			Message: "还有 " + itoa(n) + " 个传输在进行，要退出吗？",
+			Detail:  "退出后它们会暂停，下次打开时接着传。",
+			Buttons: []string{"退出", "取消"}, DefaultButton: 1, CancelButton: 1,
+		})
+		quit := err == nil && r.Button == 0
+		a.quitOK.Store(quit)
+		a.update(func() { a.askingQuit = false })
+		if quit {
+			mygo.App.Quit()
+		}
+	}()
+	return true
 }
 
 // copy puts text on the clipboard in the next frame, saying msg.

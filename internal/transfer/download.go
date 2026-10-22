@@ -296,6 +296,10 @@ func (m *Manager) fetchBlock(ctx context.Context, t *Task, f *os.File, i int, bl
 				}
 				got += int64(k)
 				t.done.Add(int64(k))
+				if err := m.down.wait(ctx, int64(k)); err != nil {
+					resp.Body.Close()
+					return err
+				}
 			}
 			if rerr == io.EOF {
 				break

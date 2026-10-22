@@ -19,6 +19,8 @@ type settings struct {
 	Parallel    int    `json:"parallel,omitempty"`     // downloads at once
 	Upload      int    `json:"upload,omitempty"`       // connections per upload
 	PreviewMB   int    `json:"preview_mb,omitempty"`   // largest picture or text previewed, in MB
+	DownLimit   int    `json:"down_limit,omitempty"`   // MB/s all downloads together may take, 0 for any
+	UpLimit     int    `json:"up_limit,omitempty"`     // MB/s all uploads together may take, 0 for any
 	// Manual keeps Threads, Parallel and Upload as set; else they follow
 	// the membership and the last measurement, as the rest always does.
 	Manual bool `json:"manual_transfer,omitempty"`
