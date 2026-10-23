@@ -4,6 +4,12 @@
 
 <!-- 写在这里的内容会成为下一个版本的更新说明；留空则按提交记录自动生成。 -->
 
+## [0.4.20] - 2026-10-23
+
+### 改进
+
+- Show the speed test's details as a card for each setting, the value chosen large with a column for each value tried and a line saying why it was chosen, in place of rows of bars and raw numbers
+
 ## [0.4.19] - 2026-10-22
 
 ### 改进
