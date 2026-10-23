@@ -186,7 +186,7 @@ func TestTuneFromSettings(t *testing.T) {
 	waitFor(t, tt, "重测")
 	tt.Click("重测")
 	waitFor(t, tt, "已根据测速优化")
-	for _, want := range []string{"下载线路", "每个文件的连接数", "请求块大小", "同时传输的文件数", "每个上传的连接数"} {
+	for _, want := range []string{"下载线路", "每个文件的连接", "每次请求的块", "同时下载的文件", "每个上传的连接", "播放与预览"} {
 		if !tt.HasText(want) {
 			t.Errorf("%q missing; texts %q", want, tt.Texts())
 		}

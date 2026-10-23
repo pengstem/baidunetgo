@@ -2,7 +2,9 @@ package app
 
 import (
 	"context"
+	"path"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/egoist/mygo/plugins/loading"
@@ -196,20 +198,26 @@ func (a *App) tuneSection(c *ui.Context, t *ui.Theme, p *palette) {
 	})
 }
 
-// tuneBar is one measured value, its speed drawn as a row of cells.
+// tuneBar is one measured value of a setting.
 type tuneBar struct {
 	label  string
+	tip    string // the whole value, when label is short of it
 	speed  float64
 	chosen bool
 	failed bool // refused at times
 }
 
-// tuneLabelWidth is the width of the values before the bars, one for every
-// setting so that the bars line up.
-const tuneLabelWidth = 132
+// tuneCard is one setting in the measurement's details: the value chosen,
+// how fast it went, a column for each value tried and a line saying why.
+type tuneCard struct {
+	title, value, unit, note string
+	speed                    float64
+	bars                     []tuneBar
+	warn                     bool // note tells of a failure
+}
 
-// tuneResult shows the last measurement and, unfolded, for each setting
-// a bar for each value measured, the chosen one in the accent color.
+// tuneResult shows the last measurement and, unfolded, a card for each
+// setting with what was chosen and why.
 func (a *App) tuneResult(c *ui.Context, t *ui.Theme, p *palette, cfg tune.Config) {
 	r := a.measured()
 	detail := "还没有测速"
@@ -251,47 +259,102 @@ func (a *App) tuneResult(c *ui.Context, t *ui.Theme, p *palette, cfg tune.Config
 		if r == nil || !a.tuneOpen {
 			return
 		}
-		ui.Column(c).Gap(12).Padding(4, 0, 14).Transition(rowEnter).Children(func() {
-			row := 0
-			group := func(title, note string, bars []tuneBar) {
-				if len(bars) == 0 {
-					return
-				}
-				fastest := 0.0
-				for _, b := range bars {
-					fastest = max(fastest, b.speed)
-				}
-				ui.Column(c.Key(title)).Gap(4).Children(func() {
-					ui.Row(c).Gap(8).AlignItems(ui.End).Children(func() {
-						ui.Text(c, title).FontSize(11).FontWeight(600).TextColor(t.TextMuted)
-						if note != "" {
-							ui.Text(c, note).FontSize(11).TextColor(p.Faint).SingleLine().Shrink(1)
+		cards := tuneCards(r, cfg)
+		ui.Column(c).Gap(10).Padding(2, 0, 12).Transition(rowEnter).Children(func() {
+			for i := 0; i < len(cards); i += 2 {
+				ui.Row(c.Key(i)).Gap(10).AlignItems(ui.Stretch).Children(func() {
+					for j := i; j < i+2; j++ {
+						if j < len(cards) {
+							a.tuneCardView(c, t, p, cards[j], j, r.At)
+						} else {
+							ui.Box(c.Key(j)).Grow(1).Basis(0)
 						}
-					})
-					for _, b := range bars {
-						a.tuneBarRow(c, t, p, b, fastest, row, r.At)
-						row++
 					}
 				})
 			}
-
-			var hosts []tuneBar
-			for _, s := range r.Hosts {
-				hosts = append(hosts, tuneBar{label: s.Host, speed: s.Speed, failed: s.Errors > 0,
-					chosen: len(cfg.Hosts) > 0 && s.Host == cfg.Hosts[0]})
+			if r.File != "" {
+				ui.Text(c, "用「"+path.Base(r.File)+"」测得 · "+humanTime(r.At.Unix(), c.Now())).
+					FontSize(11).TextColor(p.Faint).SingleLine().PaddingX(4)
 			}
-			group("下载线路", "", hosts)
-			group("每个文件的连接数", "", counts(r.Threads, int64(cfg.Threads)))
-			var blocks []tuneBar
-			for _, s := range r.Blocks {
-				blocks = append(blocks, tuneBar{label: humanSize(s.Value), speed: s.Speed, failed: s.Errors > 0, chosen: s.Value == cfg.Block})
-			}
-			group("请求块大小", "", blocks)
-			group("同时传输的文件数", "总速度", counts(r.Files, int64(cfg.Parallel)))
-			group("每个上传的连接数", r.UploadErr, counts(r.Upload, int64(cfg.Upload)))
-			ui.Text(c, "播放与预览预读 "+itoa(cfg.Ahead)+" 个连接").FontSize(11).TextColor(p.Faint)
 		})
 	})
+}
+
+// tuneCards turns a measurement into its cards, each saying in a few words
+// why its value was chosen.
+func tuneCards(r *tune.Result, cfg tune.Config) []tuneCard {
+	var cards []tuneCard
+
+	var hosts []tuneBar
+	host := ""
+	if len(cfg.Hosts) > 0 {
+		host = cfg.Hosts[0]
+	}
+	for _, s := range r.Hosts {
+		hosts = append(hosts, tuneBar{label: shortHost(s.Host), tip: s.Host, speed: s.Speed, failed: s.Errors > 0, chosen: s.Host == host})
+	}
+	if len(hosts) > 0 {
+		note := "只找到这一条线路"
+		if len(hosts) > 1 {
+			note = "试了 " + itoa(len(hosts)) + " 条，挑了最快的"
+		}
+		cards = append(cards, tuneCard{title: "下载线路", value: shortHost(host), note: note, speed: speedOfBars(hosts), bars: hosts})
+	}
+
+	threads := counts(r.Threads, int64(cfg.Threads))
+	if len(threads) > 0 {
+		cards = append(cards, tuneCard{title: "每个文件的连接", value: itoa(cfg.Threads), unit: "个",
+			note: countNote(threads, "连接"), speed: speedOfBars(threads), bars: threads})
+	}
+
+	var blocks []tuneBar
+	for _, s := range r.Blocks {
+		blocks = append(blocks, tuneBar{label: humanSize(s.Value), speed: s.Speed, failed: s.Errors > 0, chosen: s.Value == cfg.Block})
+	}
+	if len(blocks) > 0 {
+		note := "这个大小最快"
+		if lo, hi := spread(blocks); hi > 0 && lo/hi > 0.95 {
+			note = "大小几乎不影响速度"
+		}
+		size := strings.Fields(humanSize(cfg.Block))
+		card := tuneCard{title: "每次请求的块", value: size[0], note: note, speed: speedOfBars(blocks), bars: blocks}
+		if len(size) > 1 {
+			card.unit = size[1]
+		}
+		cards = append(cards, card)
+	}
+
+	files := counts(r.Files, int64(cfg.Parallel))
+	if len(files) > 0 {
+		note := "多传一个不会更快"
+		if cfg.Parallel > 1 {
+			note = "一起传，总速度更高"
+			if one := speedOf(files, "1"); one > speedOfBars(files) {
+				note = "几个文件一起传，不用排队"
+			}
+		}
+		cards = append(cards, tuneCard{title: "同时下载的文件", value: itoa(cfg.Parallel), unit: "个", note: note, speed: speedOfBars(files), bars: files})
+	}
+
+	upload := counts(r.Upload, int64(cfg.Upload))
+	if len(upload) > 0 || r.UploadErr != "" {
+		card := tuneCard{title: "每个上传的连接", value: itoa(cfg.Upload), unit: "个", note: countNote(upload, "连接"), speed: speedOfBars(upload), bars: upload}
+		if r.UploadErr != "" {
+			card.note, card.warn = "上传没测成："+r.UploadErr, true
+		}
+		cards = append(cards, card)
+	}
+
+	cards = append(cards, tuneCard{title: "播放与预览", value: itoa(cfg.Ahead), unit: "个连接", note: "预读够快，看视频、拖进度不卡"})
+	for i := range cards {
+		for _, b := range cards[i].bars {
+			if b.failed && !cards[i].warn {
+				cards[i].note += " · 有的被拒绝"
+				cards[i].warn = true
+			}
+		}
+	}
+	return cards
 }
 
 // counts makes bars of samples whose values are counts.
@@ -303,33 +366,169 @@ func counts(samples []tune.Sample, chosen int64) []tuneBar {
 	return bars
 }
 
-// tuneBarRow draws one value's speed as a slim rounded bar growing in,
-// after those above it: the chosen one in the accent color.
-func (a *App) tuneBarRow(c *ui.Context, t *ui.Theme, p *palette, b tuneBar, fastest float64, i int, at time.Time) {
-	ui.Row(c.Key(b.label)).Height(18).Gap(12).AlignItems(ui.Center).FontSize(12).FontFeatures("tnum").
-		TextColor(map[bool]ui.Color{true: t.Text, false: t.TextMuted}[b.chosen]).Children(func() {
-		ui.Text(c, b.label).Width(tuneLabelWidth).SingleLine()
-		frac := float32(0)
-		if fastest > 0 {
-			frac = float32(b.speed / fastest)
-		}
-		fill := p.Faint
+// countNote says why a count was chosen: more went slower, hardly faster,
+// or it was the most tried.
+func countNote(bars []tuneBar, what string) string {
+	at := -1
+	for i, b := range bars {
 		if b.chosen {
-			fill = t.Accent
+			at = i
 		}
-		bar := ui.Box(c).Grow(1).Height(6).Radius(3).Background(p.Hairline)
-		shown := bar.Keyframes("grow", []ui.Keyframe{{At: 0, Value: 0}, {At: 360 * time.Millisecond, Value: frac, Ease: easeStandard}},
-			ui.KeyframeOptions{Delay: time.Duration(i) * 30 * time.Millisecond, Run: uint64(at.UnixNano())})
-		bar.Draw(func(pt *ui.Painter, r ui.Rect) {
-			if w := r.W * shown; w > 0 {
-				pt.Fill(ui.Rect{X: r.X, Y: r.Y, W: max(w, r.H), H: r.H}, fill, r.H/2)
+	}
+	if at < 0 {
+		return "按会员等级的默认值"
+	}
+	chosen := bars[at].speed
+	if at == len(bars)-1 {
+		if at == 0 {
+			return "只试了这一种"
+		}
+		return "越多越快，用了试过的最多"
+	}
+	fastest, slowest := chosen, chosen
+	for _, b := range bars[at+1:] {
+		fastest, slowest = max(fastest, b.speed), min(slowest, b.speed)
+	}
+	if fastest <= chosen && slowest < chosen*0.9 {
+		return "再多" + what + "反而变慢"
+	}
+	return "再多也快不了多少，够用就好"
+}
+
+// speedOfBars returns the speed of the chosen bar.
+func speedOfBars(bars []tuneBar) float64 {
+	for _, b := range bars {
+		if b.chosen {
+			return b.speed
+		}
+	}
+	return 0
+}
+
+// speedOf returns the speed of the bar labeled label, 0 if none.
+func speedOf(bars []tuneBar, label string) float64 {
+	for _, b := range bars {
+		if b.label == label {
+			return b.speed
+		}
+	}
+	return 0
+}
+
+// spread returns the slowest and fastest speeds of bars.
+func spread(bars []tuneBar) (lo, hi float64) {
+	for i, b := range bars {
+		if i == 0 || b.speed < lo {
+			lo = b.speed
+		}
+		hi = max(hi, b.speed)
+	}
+	return lo, hi
+}
+
+// shortHost names a download host without the netdisk's domain, as
+// allall06 for allall06.baidupcs.com.
+func shortHost(h string) string {
+	if i := strings.Index(h, ".baidupcs.com"); i > 0 {
+		return h[:i]
+	}
+	return h
+}
+
+// tuneCardView draws one card: the setting, the value chosen large with
+// its speed, a column for each value tried growing in after those of the
+// cards before it, the chosen one in the accent color, and why.
+func (a *App) tuneCardView(c *ui.Context, t *ui.Theme, p *palette, k tuneCard, i int, at time.Time) {
+	ui.Column(c.Key(k.title)).Grow(1).Basis(0).Shrink(1).Gap(10).Padding(12, 14).Radius(10).Background(p.Card).Children(func() {
+		ui.Column(c).Gap(2).Children(func() {
+			ui.Text(c, k.title).FontSize(11).FontWeight(500).TextColor(t.TextMuted).SingleLine()
+			ui.Row(c).Gap(8).AlignItems(ui.End).Children(func() {
+				ui.Row(c).Gap(3).AlignItems(ui.End).Shrink(1).Children(func() {
+					figure(c, k.value).FontSize(22).FontWeight(600).Shrink(1)
+					if k.unit != "" {
+						ui.Text(c, k.unit).FontSize(12).TextColor(t.TextMuted).SingleLine().Padding(0, 0, 3)
+					}
+				})
+				ui.Box(c).Grow(1)
+				if k.speed > 0 {
+					figure(c, humanSpeed(k.speed)).FontSize(12).FontWeight(600).TextColor(t.Accent).Padding(0, 0, 3)
+				}
+			})
+		})
+		if len(k.bars) > 0 {
+			a.tuneColumns(c, t, p, k.bars, i, at)
+		} else {
+			// A card with nothing measured of its own shows what it is for.
+			ui.Box(c).Grow(1).MinHeight(48).Center().Children(func() {
+				ui.Box(c).Size(44, 44).Radius(22).Center().Background(t.Accent.Alpha(0.12)).Children(func() {
+					ui.Icon(c, icon("play")).FontSize(20).TextColor(t.Accent)
+				})
+			})
+		}
+		color := t.TextMuted
+		if k.warn {
+			color = t.Warning
+		}
+		ui.Text(c, k.note).FontSize(11).TextColor(color).SingleLine()
+	})
+}
+
+// tuneColumns draws the speed of each value tried as a column over its
+// label, all as tall as the fastest allows.
+func (a *App) tuneColumns(c *ui.Context, t *ui.Theme, p *palette, bars []tuneBar, card int, at time.Time) {
+	_, fastest := spread(bars)
+	const gap = 8
+	ui.Column(c).Gap(5).Children(func() {
+		chart := ui.Box(c).Height(48)
+		grown := make([]float32, len(bars))
+		for j, b := range bars {
+			frac := float32(0)
+			if fastest > 0 {
+				frac = float32(b.speed / fastest)
+			}
+			grown[j] = chart.Keyframes("grow"+itoa(j), []ui.Keyframe{{At: 0, Value: 0}, {At: 420 * time.Millisecond, Value: frac, Ease: easeStandard}},
+				ui.KeyframeOptions{Delay: time.Duration(card*60+j*40) * time.Millisecond, Run: uint64(at.UnixNano())})
+		}
+		rest := p.Faint.Alpha(0.3)
+		chart.Draw(func(pt *ui.Painter, r ui.Rect) {
+			n := float32(len(bars))
+			slot := (r.W - gap*(n-1)) / n
+			w := min(slot, 22)
+			pt.Fill(ui.Rect{X: r.X, Y: r.Y + r.H - 1, W: r.W, H: 1}, p.Hairline, 0)
+			for j, b := range bars {
+				x := r.X + float32(j)*(slot+gap) + (slot-w)/2
+				h := (r.H - 2) * grown[j]
+				if h <= 0 {
+					continue
+				}
+				h = max(h, 4)
+				fill := rest
+				if b.chosen {
+					fill = t.Accent
+				} else if b.failed {
+					fill = t.Warning.Alpha(0.55)
+				}
+				pt.Fill(ui.Rect{X: x, Y: r.Y + r.H - 2 - h, W: w, H: h}, fill, min(4, w/2))
 			}
 		})
-		speed := humanSpeed(b.speed)
-		if b.failed {
-			speed += "!"
-		}
-		ui.Text(c, speed).Width(72).TextAlign(ui.End).FontWeight(map[bool]int{true: 600, false: 400}[b.chosen])
+		ui.Row(c).Gap(gap).Children(func() {
+			for j, b := range bars {
+				l := ui.Column(c.Key(j)).Grow(1).Basis(0).Shrink(1).AlignItems(ui.Center).Gap(1)
+				if b.tip != "" {
+					l.Tooltip(b.tip)
+				}
+				l.Children(func() {
+					label := ui.Text(c, b.label).FontSize(11).FontFeatures("tnum").SingleLine().Shrink(1)
+					speed := figure(c, humanSpeed(b.speed)).FontSize(10).TextColor(p.Faint)
+					if b.chosen {
+						label.FontWeight(600).TextColor(t.Text)
+						speed.TextColor(t.TextMuted)
+					} else {
+						label.TextColor(t.TextMuted)
+					}
+				})
+			}
+		})
 	})
 }
 
