@@ -33,15 +33,149 @@ func TestNewFolderAndRename(t *testing.T) {
 		t.Fatalf("folder not made; texts %q", tt.Texts())
 	}
 
-	a.ask(dlgRename, "/", []baidu.File{fileNamed(t, a, "/", "README.md")})
+}
+
+// TestRenameInPlace: the name is edited where it shows, as in Finder: F2,
+// Enter, the menu or a slow second click start it, Enter or a click away
+// keeps the name, Escape goes back, and a double click still opens.
+func TestRenameInPlace(t *testing.T) {
+	a, tt, srv := signedIn(t)
+	defer func(was bool) { enterRenames = was }(enterRenames)
+	enterRenames = true
+	editing := func() bool { on, _ := tt.TextInputActive(); return on }
+	tt.Advance(time.Second)
+	if err := tt.Click("README.md"); err != nil {
+		t.Fatal(err)
+	}
+	// A click choosing a file edits nothing, however long after.
+	tt.Advance(time.Second)
+	if editing() {
+		t.Fatal("a click choosing a row edited its name")
+	}
+	tt.Key(0, ui.KeyF2)
 	tt.Advance(300 * time.Millisecond)
-	save(t, tt, "dialog-rename")
+	if !editing() || a.dlg.open {
+		t.Fatalf("F2 did not edit the name in place: dialog %v", a.dlg.open)
+	}
+	save(t, tt, "rename-in-place")
 	// The name without its extension is chosen: typing replaces it.
+	tt.Type("说明")
+	tt.Key(0, ui.KeyEnter)
+	tt.Advance(16 * time.Millisecond)
+	if editing() || !tt.HasText("说明.md") {
+		t.Fatalf("Enter did not keep the name: %q", tt.Texts())
+	}
+	settle(tt)
+	if !srv.Exists("/说明.md") || srv.Exists("/README.md") {
+		t.Fatal("not renamed on the netdisk")
+	}
+
+	// A second click on the name of the file chosen edits it, once a
+	// double click is out of reach; Escape goes back.
+	clickName := func(name string) {
+		t.Helper()
+		r, ok := tt.Find(name)
+		if !ok {
+			t.Fatalf("no %s", name)
+		}
+		tt.ClickAt(r.X+60, r.Y+r.H/2)
+	}
+	clickName("说明.md")
+	tt.Advance(200 * time.Millisecond)
+	if editing() {
+		t.Fatal("editing before the double click time")
+	}
+	tt.Advance(400 * time.Millisecond)
+	if !editing() {
+		t.Fatalf("a slow click did not edit the name: %+v %+v", a.renaming, a.slow)
+	}
+	tt.Type("别的")
+	tt.Key(0, ui.KeyEscape)
+	tt.Advance(100 * time.Millisecond)
+	if editing() || !tt.HasText("说明.md") {
+		t.Fatalf("Escape did not go back: %q", tt.Texts())
+	}
+
+	// Enter edits, the list having the focus back; a name the netdisk
+	// would refuse keeps it editing; a click away keeps the name typed.
+	tt.Key(0, ui.KeyEnter)
+	tt.Advance(100 * time.Millisecond)
+	tt.Key(ui.Cmd, ui.KeyA)
+	tt.Type("a/b")
+	tt.Key(0, ui.KeyEnter)
+	tt.Advance(100 * time.Millisecond)
+	if !editing() || !tt.HasText(`名称不能包含 / \ : * ? " < > |`) {
+		t.Fatalf("a name with a slash ended editing without a word: %v %+v %q", editing(), a.renaming, tt.Texts())
+	}
+	tt.Key(ui.Cmd, ui.KeyA)
+	tt.Type("读我.md")
+	if err := tt.Click("安装包.dmg"); err != nil {
+		t.Fatal(err)
+	}
+	settle(tt)
+	if editing() || !srv.Exists("/读我.md") {
+		t.Fatalf("a click away did not keep the name: %+v", a.renaming)
+	}
+
+	// A double click opens, and edits nothing.
+	tt.Click("读我.md")
+	tt.Advance(time.Second)
+	tt.Click("读我.md")
+	tt.Click("读我.md")
+	tt.Advance(time.Second)
+	if editing() || a.pv == nil {
+		t.Fatalf("a double click edited %v, previewed %v", editing(), a.pv != nil)
+	}
+	tt.Key(0, ui.KeyEscape)
+	tt.Advance(time.Second)
+
+	// From the selection bar, in the list.
+	if err := tt.Click("重命名"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Advance(300 * time.Millisecond)
+	if a.renaming == nil || !editing() {
+		t.Fatal("the selection bar did not edit the name")
+	}
 	tt.Type("说明")
 	tt.Key(0, ui.KeyEnter)
 	settle(tt)
 	if !srv.Exists("/说明.md") {
-		t.Errorf("rename failed: %q", a.dlg.err)
+		t.Fatal("not renamed from the selection bar")
+	}
+
+	// In the grid: from the menu, Enter, and a slow click.
+	a.gridView = true
+	tt.Advance(time.Second)
+	if err := tt.RightClick("安装包.dmg"); err != nil {
+		t.Fatal(err)
+	}
+	if err := tt.ChooseMenuItem("重命名"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Advance(300 * time.Millisecond)
+	save(t, tt, "rename-in-grid")
+	tt.Type("安装器")
+	tt.Key(0, ui.KeyEnter)
+	settle(tt)
+	if a.renaming != nil || !srv.Exists("/安装器.dmg") {
+		t.Fatalf("not renamed from the grid: %+v", a.renaming)
+	}
+	tt.Key(0, ui.KeyEnter)
+	tt.Advance(100 * time.Millisecond)
+	if a.renaming == nil {
+		t.Fatal("Enter did not edit the tile")
+	}
+	tt.Key(0, ui.KeyEscape)
+	tt.Advance(100 * time.Millisecond)
+	if a.renaming != nil || !srv.Exists("/安装器.dmg") {
+		t.Fatal("Escape did not go back in the grid")
+	}
+	r, _ := tt.Find("安装器.dmg")
+	tt.ClickAt(r.X+r.W/2, r.Y+138) // its name, under the thumbnail
+	tt.Advance(600 * time.Millisecond)
+	if a.renaming == nil {
+		t.Fatal("a slow click did not edit the tile")
 	}
 }
 
@@ -153,7 +287,7 @@ func TestNarrowSelectionBar(t *testing.T) {
 	if err := tt.Click("重命名"); err != nil {
 		t.Fatal(err)
 	}
-	if !a.dlg.open || a.dlg.kind != dlgRename {
+	if a.renaming == nil {
 		t.Error("the icon did not rename")
 	}
 }

@@ -92,9 +92,17 @@ func TestGridKeys(t *testing.T) {
 	if _, ok := tt.Find(last); !ok || l.sel.Len() != 1 {
 		t.Fatalf("End did not show %s alone", last)
 	}
-	// Folders sort first: Home goes to 附件, which Enter opens.
+	// Folders sort first: Home goes to 附件, whose name Enter edits, as in
+	// Finder, and which Cmd-Down opens.
 	tt.Key(0, ui.KeyHome)
 	tt.Key(0, ui.KeyEnter)
+	tt.Advance(100 * time.Millisecond)
+	if r := a.renaming; enterRenames && (r == nil || r.draft != "附件") {
+		t.Fatalf("Enter edited %+v", r)
+	}
+	tt.Key(0, ui.KeyEscape)
+	tt.Advance(100 * time.Millisecond)
+	tt.Key(ui.Cmd, ui.KeyDown)
 	tt.Advance(time.Second)
 	if p := a.router.Path(); p != "/files/剧集/附件" {
 		t.Errorf("Enter went to %s", p)

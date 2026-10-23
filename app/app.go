@@ -53,6 +53,8 @@ type App struct {
 
 	pv            *previewState
 	dlg           dialog
+	renaming      *renaming // a name edited in place (rename.go)
+	slow          slowClick
 	recycle       recycleState
 	recycleDirty  bool
 	found         searchState

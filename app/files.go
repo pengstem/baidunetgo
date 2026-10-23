@@ -34,6 +34,8 @@ type listing struct {
 	sel      ui.Selection[int64]
 	selected int
 	used     uint64
+	sole     int64 // the file chosen alone in the last frame, else 0
+	refocus  bool  // the files take the focus back, from a name edited
 
 	loads       int      // counts the reads that came back
 	ghosts      []string // the uploads it shows that it does not list yet

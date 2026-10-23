@@ -39,6 +39,7 @@ func (a *App) filesPage(c *ui.Context, t *ui.Theme, p *palette, dir string) {
 		}
 	}
 	a.fileActions(c, l)
+	a.slowRename(c, l)
 	page := ui.Column(c).Key("files:" + dir).Grow(1)
 	if dropped := page.DroppedFiles(); len(dropped) > 0 {
 		a.upload(dropped, dir)
@@ -67,6 +68,10 @@ func (a *App) filesPage(c *ui.Context, t *ui.Theme, p *palette, dir string) {
 		}
 		a.dropGlow(c, t, over)
 	})
+	l.sole = 0
+	if files := l.chosen(); len(files) == 1 {
+		l.sole = files[0].FsID
+	}
 }
 
 // dropZone shows where files dragged over the window will go.
@@ -119,7 +124,17 @@ func (a *App) fileList(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 	now := c.Now()
 	a.listHeader(c, t, p)
 	list := ui.List(c, &l.list, len(l.files)).Grow(1).Padding(0, 10, 16)
+	outer, enter := c, false
 	list.Rows(func(row ui.ListRow) {
+		if enterRenames && !enter {
+			// Enter renames the file chosen, as in Finder, before the list
+			// takes it to open it; a double click still opens it.
+			if enter = true; l.list.Shortcut(outer, 0, ui.KeyEnter) {
+				if files := l.chosen(); len(files) == 1 {
+					a.rename(l, files[0])
+				}
+			}
+		}
 		c := row.Context
 		f := &l.files[row.Index]
 		r := ui.Row(c).Height(rowHeight).PaddingX(10).Gap(8).AlignItems(ui.Center).Radius(6).TextColor(t.Text)
@@ -148,7 +163,11 @@ func (a *App) fileList(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 		}
 		r.Children(func() {
 			a.fileIcon(c, t, p, f, 18)
-			ui.Text(c, f.Name).Grow(1).Shrink(1).SingleLine()
+			if a.renamingIn(l, f) {
+				a.nameField(c, t, l, f, false)
+			} else {
+				a.clickName(l, f, ui.Text(c, f.Name).Grow(1).Shrink(1).SingleLine())
+			}
 			size := "—"
 			if !f.IsDir {
 				size = humanSize(f.Size)
@@ -165,6 +184,10 @@ func (a *App) fileList(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 			a.fileMenu(r, l, row.Index)
 		}
 	})
+	if l.refocus {
+		l.refocus = false
+		l.list.Focus(c)
+	}
 	if list.Submitted() && l.selected >= 0 && l.selected < len(l.files) {
 		a.open(l.files[l.selected])
 	}
@@ -288,7 +311,11 @@ func (a *App) fileGrid(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 					})
 				})
 			}
-			ui.Text(c, a.tileName(c, f.Name)).NoWrap().TextAlign(ui.Center).LineHeight(1.25)
+			if a.renamingIn(l, f) {
+				ui.Row(c).Width(tileNameWidth).Children(func() { a.nameField(c, t, l, f, true) })
+			} else {
+				a.clickName(l, f, ui.Text(c, a.tileName(c, f.Name)).NoWrap().TextAlign(ui.Center).LineHeight(1.25))
+			}
 		})
 		if !passing {
 			a.fileMenu(tile, l, i)
@@ -461,7 +488,7 @@ func (a *App) fileMenu(e ui.Element, l *listing, i int) {
 		}
 		m.Separator()
 		if one && m.Item("重命名").Shortcut(0, ui.KeyF2).Chosen() {
-			a.ask(dlgRename, l.dir, files)
+			a.rename(l, f)
 		}
 		if m.Item("移动到…").Chosen() {
 			a.ask(dlgMove, l.dir, files)

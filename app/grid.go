@@ -70,6 +70,10 @@ func (a *App) tileGrid(c *ui.Context, l *listing, tile func(i int, e ui.Element)
 		viewH = 2000
 	}
 	cols := gridCols(width)
+	if l.refocus {
+		l.refocus = false
+		grid.Focus()
+	}
 	grid.Draw(func(_ *ui.Painter, r ui.Rect) {
 		if gridCols(r.W-2*gridPadX) != cols {
 			c.Invalidate()
@@ -112,11 +116,13 @@ func (a *App) tileGrid(c *ui.Context, l *listing, tile func(i int, e ui.Element)
 				g.built[f.FsID] = spot
 				slot.Children(func() {
 					e := ui.Column(c).Grow(1).Role(ui.RoleListItem).Label(f.Name)
-					if e.Clicked() {
+					// Clicks in a name edited are the input's.
+					editing := a.renamingIn(l, f)
+					if e.Clicked() && !editing {
 						g.click(l, i, e.ClickModifiers())
 						grid.Focus()
 					}
-					if e.DoubleClicked() {
+					if e.DoubleClicked() && !editing {
 						a.open(*f)
 					}
 					tile(i, e)
@@ -140,7 +146,13 @@ func (a *App) tileGrid(c *ui.Context, l *listing, tile func(i int, e ui.Element)
 		}
 	}
 	if grid.Shortcut(0, ui.KeyEnter) && l.selected >= 0 && l.selected < n {
-		a.open(l.files[l.selected])
+		// Enter renames the file on macOS, as in Finder, and opens it
+		// elsewhere.
+		if enterRenames {
+			a.rename(l, l.files[l.selected])
+		} else {
+			a.open(l.files[l.selected])
+		}
 	}
 }
 

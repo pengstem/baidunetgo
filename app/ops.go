@@ -4,7 +4,6 @@ import (
 	"context"
 	"path"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/egoist/mygo/ui"
 
@@ -17,7 +16,6 @@ type dialogKind int
 const (
 	dlgNone dialogKind = iota
 	dlgNewFolder
-	dlgRename
 	dlgMove
 	dlgCopy
 	dlgShare
@@ -56,8 +54,6 @@ func (l *listing) chosen() []baidu.File {
 func (a *App) ask(kind dialogKind, dir string, files []baidu.File) {
 	a.dlg = dialog{kind: kind, open: true, dir: dir, files: files}
 	switch kind {
-	case dlgRename:
-		a.dlg.name = files[0].Name
 	case dlgNewFolder:
 		a.dlg.name = "新建文件夹"
 	case dlgMove, dlgCopy:
@@ -166,8 +162,6 @@ func (a *App) dialogs(c *ui.Context, t *ui.Theme, p *palette) {
 		switch d.kind {
 		case dlgNewFolder:
 			a.nameDialog(c, t, p, "新建文件夹", "在「"+dirLabel(d.dir)+"」中", "创建")
-		case dlgRename:
-			a.nameDialog(c, t, p, "重命名", d.files[0].Name, "重命名")
 		case dlgMove, dlgCopy:
 			a.pickerDialog(c, t, p)
 		case dlgShare:
@@ -234,41 +228,21 @@ func (a *App) nameDialog(c *ui.Context, t *ui.Theme, p *palette, title, detail, 
 	d := &a.dlg
 	dialogTitle(c, t, title, detail)
 	in := ui.TextInput(c, &d.name).AutoFocus().Label("名称").Height(38)
-	if d.kind == dlgRename && !d.busy && in.Focused() && d.err == "" {
-		// Choose the name without its extension, as Finder does.
-		if s, e := in.TextSelection(); s == e && s == utf8.RuneCountInString(d.name) {
-			stem := strings.TrimSuffix(d.name, path.Ext(d.name))
-			if d.files[0].IsDir || stem == "" {
-				stem = d.name
-			}
-			in.SetTextSelection(0, utf8.RuneCountInString(stem))
-		}
-	}
 	name := strings.TrimSpace(d.name)
-	valid := name != "" && !strings.ContainsAny(name, `/\:*?"<>|`)
+	valid := name != "" && !strings.ContainsAny(name, badNameChars)
 	if d.err == "" && name != "" && !valid {
 		ui.Text(c, `名称不能包含 / \ : * ? " < > |`).TextColor(t.Warning).FontSize(t.Rem(0.88))
 	}
 	submit := in.Submitted() && valid
 	if a.dialogButtons(c, t, p, action, false, !valid) || submit {
-		switch d.kind {
-		case dlgNewFolder:
-			dir, target := d.dir, path.Join(d.dir, name)
-			a.run(func(ctx context.Context, c *baidu.Client) error { return c.Mkdir(ctx, target) }, []string{dir}, "已新建「"+name+"」", nil)
-		case dlgRename:
-			f, dir := d.files[0], d.dir
-			if name == f.Name {
-				d.open = false
-				return
-			}
-			a.run(func(ctx context.Context, c *baidu.Client) error { return c.Rename(ctx, f.Path, name) }, []string{dir}, "", nil)
-		}
+		dir, target := d.dir, path.Join(d.dir, name)
+		a.run(func(ctx context.Context, c *baidu.Client) error { return c.Mkdir(ctx, target) }, []string{dir}, "已新建「"+name+"」", nil)
 	}
 }
 
 // fileActions handles the browser's keys on the files chosen.
 func (a *App) fileActions(c *ui.Context, l *listing) {
-	if a.dlg.open || a.pv != nil {
+	if a.dlg.open || a.pv != nil || a.renaming != nil {
 		return
 	}
 	files := l.chosen()
@@ -299,7 +273,7 @@ func (a *App) fileActions(c *ui.Context, l *listing) {
 		a.open(files[0])
 	}
 	if c.Shortcut(0, ui.KeyF2) && len(files) == 1 {
-		a.ask(dlgRename, l.dir, files)
+		a.rename(l, files[0])
 	}
 	if c.Shortcut(0, ui.KeyDelete) || c.Shortcut(ui.Cmd, ui.KeyBackspace) {
 		a.remove(l.dir, files)
@@ -366,7 +340,7 @@ func (a *App) selectionBar(c *ui.Context, t *ui.Theme, p *palette, l *listing, w
 			a.ask(dlgCopy, l.dir, files)
 		}
 		if len(files) == 1 && action("pencil", "重命名") {
-			a.ask(dlgRename, l.dir, files)
+			a.rename(l, files[0])
 		}
 		if action("info", "详情") {
 			a.showInfo(l.dir, files)
