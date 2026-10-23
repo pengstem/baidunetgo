@@ -4,6 +4,13 @@
 
 <!-- 写在这里的内容会成为下一个版本的更新说明；留空则按提交记录自动生成。 -->
 
+## [0.4.21] - 2026-10-23
+
+### 改进
+
+- Drop the line under each speed test card saying why its value was chosen, and the line naming the file measured, keeping a note only where something failed
+- Rename a file where its name shows, in the list and the grid, as Finder does, instead of in a dialog: F2, Enter, the menu, the selection bar or a slow second click on the name edit it in place with the name before its extension chosen, Enter or a click away keeps it and Escape goes back
+
 ## [0.4.20] - 2026-10-23
 
 ### 改进
