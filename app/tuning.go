@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -208,16 +207,16 @@ type tuneBar struct {
 }
 
 // tuneCard is one setting in the measurement's details: the value chosen,
-// how fast it went, a column for each value tried and a line saying why.
+// how fast it went and a column for each value tried.
 type tuneCard struct {
-	title, value, unit, note string
-	speed                    float64
-	bars                     []tuneBar
-	warn                     bool // note tells of a failure
+	title, value, unit string
+	note               string // what failed, if anything
+	speed              float64
+	bars               []tuneBar
 }
 
 // tuneResult shows the last measurement and, unfolded, a card for each
-// setting with what was chosen and why.
+// setting with what was chosen.
 func (a *App) tuneResult(c *ui.Context, t *ui.Theme, p *palette, cfg tune.Config) {
 	r := a.measured()
 	detail := "还没有测速"
@@ -272,16 +271,12 @@ func (a *App) tuneResult(c *ui.Context, t *ui.Theme, p *palette, cfg tune.Config
 					}
 				})
 			}
-			if r.File != "" {
-				ui.Text(c, "用「"+path.Base(r.File)+"」测得 · "+humanTime(r.At.Unix(), c.Now())).
-					FontSize(11).TextColor(p.Faint).SingleLine().PaddingX(4)
-			}
 		})
 	})
 }
 
-// tuneCards turns a measurement into its cards, each saying in a few words
-// why its value was chosen.
+// tuneCards turns a measurement into its cards, a note only on those
+// where something failed.
 func tuneCards(r *tune.Result, cfg tune.Config) []tuneCard {
 	var cards []tuneCard
 
@@ -294,17 +289,11 @@ func tuneCards(r *tune.Result, cfg tune.Config) []tuneCard {
 		hosts = append(hosts, tuneBar{label: shortHost(s.Host), tip: s.Host, speed: s.Speed, failed: s.Errors > 0, chosen: s.Host == host})
 	}
 	if len(hosts) > 0 {
-		note := "只找到这一条线路"
-		if len(hosts) > 1 {
-			note = "试了 " + itoa(len(hosts)) + " 条，挑了最快的"
-		}
-		cards = append(cards, tuneCard{title: "下载线路", value: shortHost(host), note: note, speed: speedOfBars(hosts), bars: hosts})
+		cards = append(cards, tuneCard{title: "下载线路", value: shortHost(host), bars: hosts})
 	}
 
-	threads := counts(r.Threads, int64(cfg.Threads))
-	if len(threads) > 0 {
-		cards = append(cards, tuneCard{title: "每个文件的连接", value: itoa(cfg.Threads), unit: "个",
-			note: countNote(threads, "连接"), speed: speedOfBars(threads), bars: threads})
+	if threads := counts(r.Threads, int64(cfg.Threads)); len(threads) > 0 {
+		cards = append(cards, tuneCard{title: "每个文件的连接", value: itoa(cfg.Threads), unit: "个", bars: threads})
 	}
 
 	var blocks []tuneBar
@@ -312,45 +301,33 @@ func tuneCards(r *tune.Result, cfg tune.Config) []tuneCard {
 		blocks = append(blocks, tuneBar{label: humanSize(s.Value), speed: s.Speed, failed: s.Errors > 0, chosen: s.Value == cfg.Block})
 	}
 	if len(blocks) > 0 {
-		note := "这个大小最快"
-		if lo, hi := spread(blocks); hi > 0 && lo/hi > 0.95 {
-			note = "大小几乎不影响速度"
-		}
 		size := strings.Fields(humanSize(cfg.Block))
-		card := tuneCard{title: "每次请求的块", value: size[0], note: note, speed: speedOfBars(blocks), bars: blocks}
+		card := tuneCard{title: "每次请求的块", value: size[0], bars: blocks}
 		if len(size) > 1 {
 			card.unit = size[1]
 		}
 		cards = append(cards, card)
 	}
 
-	files := counts(r.Files, int64(cfg.Parallel))
-	if len(files) > 0 {
-		note := "多传一个不会更快"
-		if cfg.Parallel > 1 {
-			note = "一起传，总速度更高"
-			if one := speedOf(files, "1"); one > speedOfBars(files) {
-				note = "几个文件一起传，不用排队"
-			}
-		}
-		cards = append(cards, tuneCard{title: "同时下载的文件", value: itoa(cfg.Parallel), unit: "个", note: note, speed: speedOfBars(files), bars: files})
+	if files := counts(r.Files, int64(cfg.Parallel)); len(files) > 0 {
+		cards = append(cards, tuneCard{title: "同时下载的文件", value: itoa(cfg.Parallel), unit: "个", bars: files})
 	}
 
 	upload := counts(r.Upload, int64(cfg.Upload))
 	if len(upload) > 0 || r.UploadErr != "" {
-		card := tuneCard{title: "每个上传的连接", value: itoa(cfg.Upload), unit: "个", note: countNote(upload, "连接"), speed: speedOfBars(upload), bars: upload}
+		card := tuneCard{title: "每个上传的连接", value: itoa(cfg.Upload), unit: "个", bars: upload}
 		if r.UploadErr != "" {
-			card.note, card.warn = "上传没测成："+r.UploadErr, true
+			card.note = "上传没测成：" + r.UploadErr
 		}
 		cards = append(cards, card)
 	}
 
-	cards = append(cards, tuneCard{title: "播放与预览", value: itoa(cfg.Ahead), unit: "个连接", note: "预读够快，看视频、拖进度不卡"})
+	cards = append(cards, tuneCard{title: "播放与预览", value: itoa(cfg.Ahead), unit: "个连接"})
 	for i := range cards {
+		cards[i].speed = speedOfBars(cards[i].bars)
 		for _, b := range cards[i].bars {
-			if b.failed && !cards[i].warn {
-				cards[i].note += " · 有的被拒绝"
-				cards[i].warn = true
+			if b.failed && cards[i].note == "" {
+				cards[i].note = "有的被拒绝"
 			}
 		}
 	}
@@ -366,49 +343,10 @@ func counts(samples []tune.Sample, chosen int64) []tuneBar {
 	return bars
 }
 
-// countNote says why a count was chosen: more went slower, hardly faster,
-// or it was the most tried.
-func countNote(bars []tuneBar, what string) string {
-	at := -1
-	for i, b := range bars {
-		if b.chosen {
-			at = i
-		}
-	}
-	if at < 0 {
-		return "按会员等级的默认值"
-	}
-	chosen := bars[at].speed
-	if at == len(bars)-1 {
-		if at == 0 {
-			return "只试了这一种"
-		}
-		return "越多越快，用了试过的最多"
-	}
-	fastest, slowest := chosen, chosen
-	for _, b := range bars[at+1:] {
-		fastest, slowest = max(fastest, b.speed), min(slowest, b.speed)
-	}
-	if fastest <= chosen && slowest < chosen*0.9 {
-		return "再多" + what + "反而变慢"
-	}
-	return "再多也快不了多少，够用就好"
-}
-
 // speedOfBars returns the speed of the chosen bar.
 func speedOfBars(bars []tuneBar) float64 {
 	for _, b := range bars {
 		if b.chosen {
-			return b.speed
-		}
-	}
-	return 0
-}
-
-// speedOf returns the speed of the bar labeled label, 0 if none.
-func speedOf(bars []tuneBar, label string) float64 {
-	for _, b := range bars {
-		if b.label == label {
 			return b.speed
 		}
 	}
@@ -436,8 +374,8 @@ func shortHost(h string) string {
 }
 
 // tuneCardView draws one card: the setting, the value chosen large with
-// its speed, a column for each value tried growing in after those of the
-// cards before it, the chosen one in the accent color, and why.
+// its speed, and a column for each value tried growing in after those of
+// the cards before it, the chosen one in the accent color.
 func (a *App) tuneCardView(c *ui.Context, t *ui.Theme, p *palette, k tuneCard, i int, at time.Time) {
 	ui.Column(c.Key(k.title)).Grow(1).Basis(0).Shrink(1).Gap(10).Padding(12, 14).Radius(10).Background(p.Card).Children(func() {
 		ui.Column(c).Gap(2).Children(func() {
@@ -465,11 +403,9 @@ func (a *App) tuneCardView(c *ui.Context, t *ui.Theme, p *palette, k tuneCard, i
 				})
 			})
 		}
-		color := t.TextMuted
-		if k.warn {
-			color = t.Warning
+		if k.note != "" {
+			ui.Text(c, k.note).FontSize(11).TextColor(t.Warning).SingleLine()
 		}
-		ui.Text(c, k.note).FontSize(11).TextColor(color).SingleLine()
 	})
 }
 
