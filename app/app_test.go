@@ -68,8 +68,8 @@ func TestBrowse(t *testing.T) {
 }
 
 // TestBreadcrumbTips tells the whole path when the pointer rests on a
-// breadcrumb, and the whole summary on the line under it, which a narrow
-// window cuts short.
+// breadcrumb. No summary of the folder sits under the path: the status
+// bar has it.
 func TestBreadcrumbTips(t *testing.T) {
 	a, tt, _ := signedIn(t)
 	a.router.Push(filesRoute("/照片"))
@@ -88,10 +88,8 @@ func TestBreadcrumbTips(t *testing.T) {
 	if !tt.HasText("我的文件 / 照片") {
 		t.Errorf("no path tip: %q", tt.Texts())
 	}
-	sub := filesSubtitle(a.listingFor("/照片"))
-	rest(sub)
-	if n := strings.Count(strings.Join(tt.Texts(), "\n"), sub); n != 2 {
-		t.Errorf("summary shows %d times, want it in a tip too", n)
+	if all := strings.Join(tt.Texts(), "\n"); strings.Contains(all, "个文件夹 · ") || strings.Contains(all, "个文件 · ") {
+		t.Errorf("a summary under the path: %q", tt.Texts())
 	}
 }
 

@@ -78,9 +78,16 @@ type App struct {
 
 	sidebarCollapsed bool
 	compact          bool // the title bar is narrow: choices fold into pop-up buttons
-	profileOpen      bool
-	navAt            string // the sidebar page shown, to notice a change
-	navRun           uint64 // counts changes, to replay the icon's gesture
+	// The folder's tools that fold, as wide as they were last shown open
+	// [0] and folded [1], and which way they were built last frame; and
+	// whether the search field was open then. They tell how much room
+	// opening the tools would take from the path.
+	toolsWidth  [2]float32
+	toolsFolded bool
+	searchOpen  bool
+	profileOpen bool
+	navAt       string // the sidebar page shown, to notice a change
+	navRun      uint64 // counts changes, to replay the icon's gesture
 
 	queueMu sync.Mutex
 	queued  []func()

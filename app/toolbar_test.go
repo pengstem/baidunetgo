@@ -90,7 +90,8 @@ func TestCompactToolbar(t *testing.T) {
 
 // TestPathFolds folds the folders above a deep folder with long names into
 // "…" in a narrow window, keeping the folder's own name, and goes to one
-// of them from its menu.
+// of them from its menu. The tools fold first, however wide the window,
+// and open again only when the path still shows whole beside them.
 func TestPathFolds(t *testing.T) {
 	a, tt, srv := signedIn(t)
 	dir := "/数学建模美赛资料合集（2026版）/历年真题与优秀论文完整汇编/附录与评审标准说明文件夹"
@@ -99,10 +100,21 @@ func TestPathFolds(t *testing.T) {
 	waitFor(t, tt, "说明.txt")
 	tt.SetSize(1500, 760)
 	tt.Advance(time.Second)
-	if _, ok := tt.Find("上层文件夹"); ok {
-		t.Error("the path folded in a wide window")
+	if _, ok := tt.Find("上层文件夹"); ok || a.compact {
+		t.Errorf("in a wide window the path folded (%v) or the tools did (%v)", ok, a.compact)
 	}
 	save(t, tt, "path-wide")
+	tt.SetSize(1250, 760)
+	tt.Advance(time.Second)
+	if _, ok := tt.Find("上层文件夹"); ok || !a.compact {
+		t.Errorf("the path folded (%v) before the tools did (%v)", ok, a.compact)
+	}
+	save(t, tt, "path-tools-folded")
+	tt.SetSize(1500, 760)
+	tt.Advance(time.Second)
+	if a.compact {
+		t.Error("the tools stayed folded with room for them and the path")
+	}
 	tt.SetSize(760, 600)
 	tt.Advance(time.Second)
 	save(t, tt, "path-narrow")

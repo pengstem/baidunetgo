@@ -255,8 +255,9 @@ func (a *App) titleBar(c *ui.Context, t *ui.Theme, p *palette, left float32) {
 	row := ui.Row(c).Height(barHeight(c)).Shrink(0).PaddingStart(left).PaddingEnd(bar.Right + 14).
 		AlignItems(ui.Center).Gap(8).DragWindow()
 	// As wide as the pane, whatever it holds, so last frame's width tells
-	// whether the tools fit.
-	if w := row.Bounds().W; w > 0 {
+	// whether the tools fit. A folder's tools fold instead when its path
+	// needs the room (breadcrumbs).
+	if w := row.Bounds().W; w > 0 && a.currentDir() == "" {
 		a.compact = w < compactBar
 	}
 	row.Children(func() {
@@ -335,32 +336,4 @@ func (a *App) subtitle() string {
 		return "BaiduNetGo " + version()
 	}
 	return ""
-}
-
-// filesSubtitle counts what a folder holds.
-func filesSubtitle(l *listing) string {
-	if !l.loaded {
-		return "正在读取…"
-	}
-	dirs, files := 0, 0
-	var size int64
-	for _, f := range l.files {
-		if f.IsDir {
-			dirs++
-		} else {
-			files++
-			size += f.Size
-		}
-	}
-	var s []string
-	if dirs > 0 {
-		s = append(s, itoa(dirs)+" 个文件夹")
-	}
-	if files > 0 {
-		s = append(s, itoa(files)+" 个文件", humanSize(size))
-	}
-	if len(s) == 0 {
-		return "空文件夹"
-	}
-	return strings.Join(s, " · ")
 }

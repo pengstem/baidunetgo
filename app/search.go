@@ -148,9 +148,14 @@ func highlight(name, q string, t *ui.Theme) []ui.Span {
 	}
 }
 
+// searchWidth and searchFolded are how wide the search field is closed,
+// in a wide title bar and folded into a button.
+const searchWidth, searchFolded = 170, 28
+
 // searchField searches the netdisk for what is typed, growing as it takes
 // the focus. It is built of a bare text input, not ui.SearchField, so that
 // Cmd-F can put the cursor in it.
+
 func (a *App) searchField(c *ui.Context, t *ui.Theme, p *palette) {
 	f := ui.Row(c.Key("search")).Height(28).Radius(14).PaddingStart(9).PaddingEnd(5).Gap(5).AlignItems(ui.Center).Background(p.Control)
 	var in ui.Element
@@ -168,11 +173,12 @@ func (a *App) searchField(c *ui.Context, t *ui.Theme, p *palette) {
 	})
 	// In a narrow title bar it folds into a round button, as Finder's
 	// does, which opens it, leaving the room to the path.
-	w := float32(170)
-	if in.Focused() || a.query != "" {
+	w := float32(searchWidth)
+	a.searchOpen = in.Focused() || a.query != ""
+	if a.searchOpen {
 		w = 240
 	} else if a.compact {
-		w = 28
+		w = searchFolded
 		f.Tooltip("搜索")
 		if f.Hovered() {
 			f.Background(t.SurfaceHover)

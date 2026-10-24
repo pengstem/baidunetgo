@@ -513,9 +513,10 @@ func (a *App) fileMenu(e ui.Element, l *listing, i int) {
 	})
 }
 
-// breadcrumbs shows where the browser is: the folder as the title, the
-// folders above it as links before it, and under them what it holds. It
-// takes the room the tools leave, and when the path is wider than that it
+// breadcrumbs shows where the browser is: the folder as the title and the
+// folders above it as links before it (what it holds is in the status
+// bar). It comes before the tools: they fold to give it room before it
+// folds itself (foldTools). When the path is still wider than the room it
 // folds the folders above into "…" from the top down, as Finder's path
 // bar does, so the folder's own name goes last: "…" opens a menu of those
 // it folded, and only a name too long for the room alone shortens.
@@ -526,46 +527,64 @@ func (a *App) breadcrumbs(c *ui.Context, t *ui.Theme, p *palette, dir string) {
 	}
 	labels := slices.Clone(parts)
 	labels[0] = "我的文件"
-	col := ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(1)
-	from, root := fitCrumbs(c, labels, col.Bounds().W)
+	row := ui.Row(c).Grow(1).Shrink(1).MinWidth(0).Gap(1).AlignItems(ui.Center).ClipX()
+	widths := crumbWidths(c, labels)
+	room := row.Bounds().W
+	a.compact = a.foldTools(crumbsWidth(widths), room)
+	from, root := fitCrumbs(c, widths, room)
 	target := func(i int) string { return "/" + path.Join(parts[1:i+1]...) }
-	col.Children(func() {
-		ui.Row(c).Gap(1).AlignItems(ui.Center).Shrink(1).MinWidth(0).ClipX().Children(func() {
-			chevron := func() { ui.Icon(c, icon("chevron-right")).FontSize(12).TextColor(p.Faint) }
-			for i := range parts {
-				if i < from && !(i == 0 && root) {
-					continue
-				}
-				if i > 0 && (i != from || root) {
-					chevron()
-				}
-				if i == from && from > 0 {
-					a.foldedCrumbs(c, t, labels, from, root, target)
-					chevron()
-				}
-				label := labels[i]
-				last := i == len(parts)-1
-				// The tip tells the whole path, as the name may be cut short.
-				tip := strings.Join(labels[:i+1], " / ")
-				crumb := ui.ButtonBase(c.Key(i)).Label(label).Tooltip(tip).PaddingX(3).Radius(4).Shrink(0).FontSize(14).
-					Transition(ui.ElementTransition{Animation: &motionPanel, Enter: &ui.Motion{X: 6, Opacity: 0}, Exit: &ui.Motion{Opacity: 0}})
-				if last {
-					crumb.FontWeight(700).Shrink(1).MinWidth(0)
-				} else {
-					crumb.FontWeight(500).TextColor(t.TextMuted)
-					if crumb.Hovered() {
-						crumb.TextColor(t.Text)
-					}
-				}
-				crumb.Children(func() { ui.Text(c, label).SingleLine() })
-				if crumb.Clicked() && !last {
-					a.router.Push(filesRoute(target(i)))
+	row.Children(func() {
+		chevron := func() { ui.Icon(c, icon("chevron-right")).FontSize(12).TextColor(p.Faint) }
+		for i := range parts {
+			if i < from && !(i == 0 && root) {
+				continue
+			}
+			if i > 0 && (i != from || root) {
+				chevron()
+			}
+			if i == from && from > 0 {
+				a.foldedCrumbs(c, t, labels, from, root, target)
+				chevron()
+			}
+			label := labels[i]
+			last := i == len(parts)-1
+			// The tip tells the whole path, as the name may be cut short.
+			tip := strings.Join(labels[:i+1], " / ")
+			crumb := ui.ButtonBase(c.Key(i)).Label(label).Tooltip(tip).PaddingX(3).Radius(4).Shrink(0).FontSize(14).
+				Transition(ui.ElementTransition{Animation: &motionPanel, Enter: &ui.Motion{X: 6, Opacity: 0}, Exit: &ui.Motion{Opacity: 0}})
+			if last {
+				crumb.FontWeight(700).Shrink(1).MinWidth(0)
+			} else {
+				crumb.FontWeight(500).TextColor(t.TextMuted)
+				if crumb.Hovered() {
+					crumb.TextColor(t.Text)
 				}
 			}
-		})
-		sub := filesSubtitle(a.listingFor(dir))
-		ui.Text(c, sub).Tooltip(sub).FontSize(11).PaddingX(3).TextColor(t.TextMuted).SingleLine().FontFeatures("tnum")
+			crumb.Children(func() { ui.Text(c, label).SingleLine() })
+			if crumb.Clicked() && !last {
+				a.router.Push(filesRoute(target(i)))
+			}
+		}
 	})
+}
+
+// foldTools tells whether the folder's tools fold, from last frame's room
+// for the path and the path's whole width: whenever the path would not
+// show whole beside them open, however wide the window, so that the path
+// never folds while they could give it room. Folded, they open again only
+// once the path, whole, would still fit beside them open.
+func (a *App) foldTools(path, room float32) bool {
+	if room <= 0 {
+		return a.compact // nothing laid out yet
+	}
+	if !a.toolsFolded {
+		return path > room
+	}
+	cost := a.toolsWidth[0] - a.toolsWidth[1]
+	if !a.searchOpen {
+		cost += searchWidth - searchFolded
+	}
+	return path > room-cost
 }
 
 // foldedCrumbs is the "…" standing for the folders the path folded, those
@@ -591,16 +610,12 @@ func (a *App) foldedCrumbs(c *ui.Context, t *ui.Theme, labels []string, from int
 	})
 }
 
-// fitCrumbs chooses which crumbs of a path fit in room DIPs: those from
-// from on, after a "…" for the rest when from > 0, and with root the top
-// one kept before the "…". It folds from the top down, keeping the top
-// while it can, and at worst shows "…" and the last, which then shortens.
-// No room yet (the first frame) shows them all.
-func fitCrumbs(c *ui.Context, labels []string, room float32) (from int, root bool) {
-	if room <= 0 {
-		return 0, true
-	}
-	const pad, chevron = 6, 13 // a crumb's padding; a chevron and the gaps by it
+// crumbChevron is the width of a chevron between crumbs and the gaps by it.
+const crumbChevron = 13
+
+// crumbWidths measures the crumbs of a path, each with its padding.
+func crumbWidths(c *ui.Context, labels []string) []float32 {
+	const pad = 6
 	widths := make([]float32, len(labels))
 	for i, l := range labels {
 		weight := 500
@@ -610,18 +625,33 @@ func fitCrumbs(c *ui.Context, labels []string, room float32) (from int, root boo
 		w, _ := c.MeasureText(0, ui.Span{Text: l, Size: 14, Weight: weight})
 		widths[i] = w + pad
 	}
+	return widths
+}
+
+// crumbsWidth is how wide crumbs of these widths are side by side, with
+// the chevrons between them.
+func crumbsWidth(widths []float32) float32 {
+	var w float32
+	for _, x := range widths {
+		w += x + crumbChevron
+	}
+	return w - crumbChevron
+}
+
+// fitCrumbs chooses which crumbs of a path, of these widths, fit in room
+// DIPs: those from from on, after a "…" for the rest when from > 0, and
+// with root the top one kept before the "…". It folds from the top down,
+// keeping the top while it can, and at worst shows "…" and the last, which
+// then shortens. No room yet (the first frame) shows them all.
+func fitCrumbs(c *ui.Context, widths []float32, room float32) (from int, root bool) {
+	if room <= 0 {
+		return 0, true
+	}
+	const chevron = crumbChevron
 	ellipsis, _ := c.MeasureText(0, ui.Span{Text: "…", Size: 14, Weight: 500})
 	ellipsis += 8 + chevron
-	// tail is the width of the crumbs from i on, with the chevrons before
-	// all but the first.
-	tail := func(i int) float32 {
-		var w float32
-		for _, x := range widths[i:] {
-			w += x + chevron
-		}
-		return w - chevron
-	}
-	last := len(labels) - 1
+	tail := func(i int) float32 { return crumbsWidth(widths[i:]) }
+	last := len(widths) - 1
 	for from := 0; from <= last; from++ {
 		w := tail(from)
 		if from == 1 {
@@ -654,16 +684,29 @@ func (a *App) filesToolbar(c *ui.Context, t *ui.Theme, p *palette, dir string) {
 	if a.gridView {
 		a.sortMenu(c, t, p)
 	}
-	a.viewSwitch(c, t, p)
-	if toolButton(c, t, p, "folder-plus", "新建文件夹").Clicked() {
-		a.ask(dlgNewFolder, dir, nil)
+	// Those that fold, together so that their width, open and folded,
+	// tells foldTools what opening them takes from the path.
+	tools := ui.Row(c.Key("folding-tools")).Gap(8).AlignItems(ui.Center).Shrink(0)
+	if w := tools.Bounds().W; w > 0 {
+		folded := 0
+		if a.toolsFolded {
+			folded = 1
+		}
+		a.toolsWidth[folded] = w
 	}
-	if toolButton(c, t, p, "refresh-cw", "刷新").Clicked() {
-		a.reload(dir)
-	}
-	if pillOf(c, t, p, "upload", "上传", true, a.compact).Clicked() {
-		a.pickUpload(dir)
-	}
+	a.toolsFolded = a.compact
+	tools.Children(func() {
+		a.viewSwitch(c, t, p)
+		if toolButton(c, t, p, "folder-plus", "新建文件夹").Clicked() {
+			a.ask(dlgNewFolder, dir, nil)
+		}
+		if toolButton(c, t, p, "refresh-cw", "刷新").Clicked() {
+			a.reload(dir)
+		}
+		if pillOf(c, t, p, "upload", "上传", true, a.compact).Clicked() {
+			a.pickUpload(dir)
+		}
+	})
 }
 
 // sortOrders are what the browser sorts by, as the list's columns.
