@@ -4,6 +4,14 @@
 
 <!-- 写在这里的内容会成为下一个版本的更新说明；留空则按提交记录自动生成。 -->
 
+## [0.4.23] - 2026-10-24
+
+### 改进
+
+- Fold the folders above the current one into a "…" from the top down when the path is wider than the room the title bar's tools leave, measured from the names, as Finder's path bar does, so the folder's own name shows whole and shortens last, with "…" opening a menu of the folded folders, nearest first; in a narrow title bar the search field also folds into a round button that opens it and the upload button into its icon, leaving the room to the path
+- Fold the selection bar's action labels away and open them out over 180 ms as the window narrows past the width that keeps them, instead of dropping them in one frame, through an animated value since MyGo skips layout transitions on frames where the window resized
+- Step settings numbers in one capsule, a minus and a plus around the value with its unit, zero limits reading 不限, in place of a boxed field beside an AppKit stepper, and drop the lines under settings that only restated them (自动, 不限速, what auto-tuning picks); the measured speed now shows in manual mode too, as host and block size stay measured, so the rows no longer jump as a held plus turns auto off
+
 ## [0.4.22] - 2026-10-24
 
 ### 改进
