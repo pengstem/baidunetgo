@@ -30,6 +30,11 @@ type settings struct {
 	// SkipImport stops signing in with another client's account by
 	// itself, once the user signed out.
 	SkipImport bool `json:"skip_pcs_import,omitempty"`
+	// ShareDest is the folder shares were last saved into.
+	ShareDest string `json:"share_dest,omitempty"`
+	// SeenShare is the last share link found on the clipboard, and its
+	// password, opened once and not again.
+	SeenShare string `json:"seen_share,omitempty"`
 }
 
 type tuneRecord struct {

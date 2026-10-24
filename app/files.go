@@ -100,6 +100,7 @@ func (a *App) listingFor(dir string) *listing {
 // front, unless it was just read, and lets the others be read again as
 // they show.
 func (a *App) refocused() {
+	a.clipCheck = true
 	cur := a.currentDir()
 	for dir, l := range a.listings {
 		switch {

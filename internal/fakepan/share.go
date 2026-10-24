@@ -3,6 +3,7 @@ package fakepan
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"path"
 	"strconv"
 	"strings"
@@ -32,6 +33,10 @@ func (s *Server) shareRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/share/record", s.shareRecord)
 	mux.HandleFunc("/share/surlinfoinrecord", s.shareInfo)
 	mux.HandleFunc("/share/cancel", s.shareCancel)
+	mux.HandleFunc("/share/verify", s.shareVerify)
+	mux.HandleFunc("/api/shorturlinfo", s.shortURLInfo)
+	mux.HandleFunc("/share/list", s.sharedList)
+	mux.HandleFunc("/s/", s.sharePage)
 	mux.HandleFunc("/share/transfer", s.shareTransfer)
 	mux.HandleFunc("/rest/2.0/services/cloud_dl", s.cloudDl)
 }
@@ -104,24 +109,226 @@ func (s *Server) shareCancel(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"errno": 0})
 }
 
-// shareTransfer saves the one share the fake knows, 1demo with password
-// abcd: a folder of pictures.
+// DemoShare is the link of a share of someone else's that the fake
+// knows, and its password: a folder of travel pictures and a list.
+const (
+	DemoShare    = "https://pan.baidu.com/s/1demo"
+	DemoSharePwd = "abcd"
+	demoShareID  = 777
+)
+
+func (s *Server) seedShare() {
+	s.demo = map[string]*Node{}
+	for i := range 3 {
+		s.addIn(s.demo, Node{Path: "/分享的旅行照片/shared-" + strconv.Itoa(i+1) + ".png", Category: 3, Data: swatchPNG(i*5+2, 400, 300)})
+	}
+	s.addIn(s.demo, Node{Path: "/分享的旅行照片/海边日落.mp4", Category: 1, Size: 286_000_000})
+	s.addIn(s.demo, Node{Path: "/旅行清单.txt", Category: 4, Data: []byte("护照\n相机\n充电器\n")})
+}
+
+// shared is what a share link of the fake opens: its tree, the paths it
+// shares and its password; ok is false when there is no such share.
+type shared struct {
+	id    int64
+	nodes map[string]*Node
+	roots []string
+	pwd   string
+	mine  bool
+	made  int64
+	until int64
+}
+
+func (s *Server) sharedBy(surl string) (sh shared, ok bool) {
+	surl = strings.TrimPrefix(surl, "1")
+	if surl == "demo" {
+		var roots []string
+		for _, n := range childrenIn(s.demo, "/") {
+			roots = append(roots, n.Path)
+		}
+		return shared{id: demoShareID, nodes: s.demo, roots: roots, pwd: DemoSharePwd, made: 1755653442}, true
+	}
+	for _, x := range s.shares {
+		if surl == "fake"+strconv.FormatInt(x.ID, 10) {
+			return shared{id: x.ID, nodes: s.nodes, roots: x.Paths, pwd: x.Pwd, mine: true, made: x.Created, until: x.Expires}, true
+		}
+	}
+	return shared{}, false
+}
+
+// sekey is what a share's password opens it with.
+func sekey(id int64) string { return "sk" + strconv.FormatInt(id, 10) + "=" }
+
+func (s *Server) shareVerify(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sh, ok := s.sharedBy("1" + r.URL.Query().Get("surl"))
+	switch {
+	case !ok:
+		writeJSON(w, map[string]any{"errno": 105})
+	case r.FormValue("pwd") != sh.pwd:
+		writeJSON(w, map[string]any{"errno": -9})
+	default:
+		writeJSON(w, map[string]any{"errno": 0, "randsk": url.QueryEscape(sekey(sh.id))})
+	}
+}
+
+// opened returns the share a call is about, when its password opened it.
+func (s *Server) opened(w http.ResponseWriter, surl, key string) (shared, bool) {
+	sh, ok := s.sharedBy(surl)
+	switch {
+	case !ok:
+		writeJSON(w, map[string]any{"errno": 140, "show_msg": "啊哦，链接出错了"})
+		return sh, false
+	case key != sekey(sh.id):
+		writeJSON(w, map[string]any{"errno": -9, "show_msg": "提取码验证失败，请重试"})
+		return sh, false
+	}
+	return sh, true
+}
+
+func (s *Server) shortURLInfo(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	q := r.URL.Query()
+	sh, ok := s.opened(w, q.Get("shorturl"), q.Get("spd"))
+	if !ok {
+		return
+	}
+	left := int64(0)
+	if sh.until > 0 {
+		left = sh.until - time.Now().Unix()
+	}
+	writeJSON(w, map[string]any{"errno": 0, "shareid": sh.id, "uk": 42, "ctime": sh.made, "expiredtype": left, "fcount": len(sh.roots)})
+}
+
+// sharedList lists a share's top, or a folder of it, with numbers as
+// strings at the top as the netdisk sends them.
+func (s *Server) sharedList(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	q := r.URL.Query()
+	sh, ok := s.opened(w, q.Get("shorturl"), q.Get("sekey"))
+	if !ok {
+		return
+	}
+	list := []map[string]any{}
+	if q.Get("root") == "1" {
+		for _, p := range sh.roots {
+			if n := sh.nodes[p]; n != nil {
+				e := s.entry(n)
+				for k, v := range e {
+					if n, ok := v.(int64); ok {
+						e[k] = strconv.FormatInt(n, 10)
+					}
+				}
+				list = append(list, e)
+			}
+		}
+		writeJSON(w, map[string]any{"errno": 0, "list": list, "share_id": sh.id, "uk": 42})
+		return
+	}
+	dir := path.Clean("/" + q.Get("dir"))
+	if !sh.holds(dir) {
+		writeJSON(w, map[string]any{"errno": 2})
+		return
+	}
+	for _, n := range childrenIn(sh.nodes, dir) {
+		list = append(list, s.entry(n))
+	}
+	writeJSON(w, map[string]any{"errno": 0, "list": list})
+}
+
+// holds reports whether a path is in what the share shares.
+func (sh shared) holds(p string) bool {
+	for _, root := range sh.roots {
+		if p == root || strings.HasPrefix(p, root+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// sharePage is the share's web page, which tells who shared it.
+func (s *Server) sharePage(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sh, ok := s.sharedBy(path.Base(r.URL.Path))
+	if !ok {
+		w.Write([]byte(`<html><body class="error-404"></body></html>`))
+		return
+	}
+	owner, photo := "旅行的猫", s.URL+"/thumb?id=11"
+	if sh.mine {
+		owner, photo = "演示用户", s.URL+"/thumb?id=7"
+	}
+	page, _ := json.Marshal(map[string]any{"loginstate": 1, "linkusername": owner, "photo": photo, "self": b2i(sh.mine), "shareid": sh.id})
+	w.Write([]byte("<html><script>locals.mset(" + string(page) + ");</script></html>"))
+}
+
+// shareTransfer saves files of an opened share into a folder, a name
+// taken already getting a number, as ondup=newcopy asks.
 func (s *Server) shareTransfer(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if !strings.HasSuffix(r.FormValue("link"), "/1demo") {
-		writeJSON(w, map[string]any{"errno": -21})
+	q := r.URL.Query()
+	id, _ := strconv.ParseInt(q.Get("shareid"), 10, 64)
+	var sh shared
+	for _, surl := range s.shareURLs() {
+		if x, ok := s.sharedBy(surl); ok && x.id == id {
+			sh = x
+		}
+	}
+	if sh.nodes == nil || q.Get("sekey") != sekey(sh.id) {
+		writeJSON(w, map[string]any{"errno": -9})
 		return
 	}
-	if r.FormValue("pwd") != "abcd" {
-		writeJSON(w, map[string]any{"errno": -12, "show_msg": "提取码错误"})
+	var ids []int64
+	json.Unmarshal([]byte(r.FormValue("fsidlist")), &ids)
+	dir := path.Clean("/" + r.FormValue("path"))
+	if n := s.nodes[dir]; n == nil || !n.IsDir {
+		writeJSON(w, map[string]any{"errno": 2, "show_msg": "目标文件夹不存在"})
 		return
 	}
-	dir := path.Join(r.FormValue("path"), "分享的旅行照片")
-	for i := range 3 {
-		s.add(Node{Path: path.Join(dir, "shared-"+strconv.Itoa(i+1)+".png"), Category: 3, Data: swatchPNG(i*5+2, 400, 300)})
+	var info []map[string]any
+	for _, id := range ids {
+		var from *Node
+		for _, n := range sh.nodes {
+			if n.FsID == id && sh.holds(n.Path) {
+				from = n
+			}
+		}
+		if from == nil {
+			writeJSON(w, map[string]any{"errno": 2})
+			return
+		}
+		to := path.Join(dir, path.Base(from.Path))
+		for i := 1; s.nodes[to] != nil; i++ {
+			ext := path.Ext(from.Path)
+			to = path.Join(dir, strings.TrimSuffix(path.Base(from.Path), ext)+"("+strconv.Itoa(i)+")"+ext)
+		}
+		var copies []Node
+		for p, n := range sh.nodes {
+			if p == from.Path || strings.HasPrefix(p, from.Path+"/") {
+				c := *n
+				c.FsID, c.Path = 0, to+strings.TrimPrefix(p, from.Path)
+				copies = append(copies, c)
+			}
+		}
+		for _, c := range copies {
+			s.add(c)
+		}
+		info = append(info, map[string]any{"errno": 0, "fsid": id, "path": from.Path})
 	}
-	writeJSON(w, map[string]any{"errno": 0, "count": 1})
+	writeJSON(w, map[string]any{"errno": 0, "info": info, "task_id": 0})
+}
+
+// shareURLs are the short links of every share the fake knows.
+func (s *Server) shareURLs() []string {
+	out := []string{"1demo"}
+	for _, x := range s.shares {
+		out = append(out, "1fake"+strconv.FormatInt(x.ID, 10))
+	}
+	return out
 }
 
 func (s *Server) cloudDl(w http.ResponseWriter, r *http.Request) {

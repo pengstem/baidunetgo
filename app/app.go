@@ -66,6 +66,8 @@ type App struct {
 	transfers     transfersState
 	sys           systemState
 	shareForm     shareForm
+	link          linkState // a share link opened to save (sharelink.go)
+	clipCheck     bool      // look for a share link on the clipboard when free
 	shares        sharesState
 	sharesDirty   bool
 	offline       offlineState
@@ -224,6 +226,10 @@ func (a *App) View(c *ui.Context) {
 			Animation: &motionPanel,
 			Enter:     &ui.Motion{Scale: 0.97},
 		}).Children(func() { a.shell(c, t, p) })
+		if a.clipCheck && !a.dlg.open && a.pv == nil && a.renaming == nil {
+			a.clipCheck = false
+			a.checkClipboard(c)
+		}
 		a.dialogs(c, t, p)
 		a.previewOverlay(c, t, p)
 	}
@@ -231,6 +237,9 @@ func (a *App) View(c *ui.Context) {
 	if a.copyText != "" || a.copyPNG != nil {
 		if a.copyText != "" {
 			c.WriteClipboard(a.copyText)
+			if link, pwd, ok := baidu.ParseShareLink(a.copyText); ok {
+				a.seenShare(link, pwd) // the app's own, not to open
+			}
 		} else {
 			writePNG(c, a.copyPNG)
 		}

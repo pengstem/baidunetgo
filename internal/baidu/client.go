@@ -227,6 +227,7 @@ type APIError struct {
 	Op    string
 	Errno int
 	Msg   string
+	body  []byte // the whole answer, for what else it tells
 }
 
 func (e *APIError) Error() string {
@@ -279,6 +280,12 @@ func (c *Client) postForm(ctx context.Context, op, path string, q url.Values, fo
 }
 
 func (c *Client) doJSON(ctx context.Context, op, method, path string, q url.Values, form url.Values, v any) error {
+	return c.doJSONFrom(ctx, op, method, path, "https://pan.baidu.com/disk/home", q, form, v)
+}
+
+// doJSONFrom is doJSON as from the page referer, which the share pages'
+// calls must come from.
+func (c *Client) doJSONFrom(ctx context.Context, op, method, path, referer string, q url.Values, form url.Values, v any) error {
 	u := c.base + path
 	if len(q) > 0 {
 		u += "?" + q.Encode()
@@ -292,7 +299,7 @@ func (c *Client) doJSON(ctx context.Context, op, method, path string, q url.Valu
 		return err
 	}
 	req.Header.Set("User-Agent", UserAgent)
-	req.Header.Set("Referer", "https://pan.baidu.com/disk/home")
+	req.Header.Set("Referer", referer)
 	if form != nil {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	}
@@ -320,7 +327,7 @@ func (c *Client) doJSON(ctx context.Context, op, method, path string, q url.Valu
 		if msg == "" {
 			msg = pe.ErrMsg
 		}
-		return &APIError{Op: op, Errno: pe.Errno, Msg: msg}
+		return &APIError{Op: op, Errno: pe.Errno, Msg: msg, body: data}
 	}
 	if v == nil {
 		return nil

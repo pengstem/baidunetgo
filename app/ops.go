@@ -157,7 +157,11 @@ func (a *App) dialogs(c *ui.Context, t *ui.Theme, p *palette) {
 	open := d.open
 	ui.DialogBase(c, &d.open, func(backdrop, panel ui.Element) {
 		backdrop.Background(p.Scrim)
-		panel.Width(420).Padding(20).Gap(14).Radius(14).Background(p.Card).Border(1, p.Hairline).
+		width := float32(420)
+		if d.kind == dlgSaveLink {
+			width = 480
+		}
+		panel.Width(width).Padding(20).Gap(14).Radius(14).Background(p.Card).Border(1, p.Hairline).
 			Shadow(0, 16, 40, -12, p.Shadow).Transition(popIn)
 		switch d.kind {
 		case dlgNewFolder:
@@ -254,6 +258,13 @@ func (a *App) fileActions(c *ui.Context, l *listing) {
 	}
 	if c.Shortcut(ui.Cmd, ui.KeyR) {
 		a.reload(l.dir)
+	}
+	if c.Shortcut(ui.Cmd, ui.KeyV) {
+		if text := c.ReadClipboard(); len(text) < 4096 {
+			if _, _, ok := baidu.ParseShareLink(text); ok {
+				a.openLink(text, false)
+			}
+		}
 	}
 	if c.Shortcut(ui.Cmd, ui.Key1) {
 		a.gridView = false

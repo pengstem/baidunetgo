@@ -13,13 +13,11 @@ import (
 	"github.com/pengstem/baidunetgo/internal/baidu"
 )
 
-// shareForm is the dialog sharing files, and saving a share's link.
+// shareForm is the dialog sharing files.
 type shareForm struct {
 	period  int // 0 one day, 1 seven, 2 thirty, 3 for ever
 	pwd     string
 	link    string // made
-	text    string // pasted link of a share to save
-	picker  picker
 	created bool
 }
 
@@ -134,35 +132,6 @@ func periodLabel(days int) string {
 		return "永久有效"
 	}
 	return itoa(days) + " 天有效"
-}
-
-// saveLinkDialog saves a share link someone gave into the netdisk.
-func (a *App) saveLinkDialog(c *ui.Context, t *ui.Theme, p *palette) {
-	f := &a.shareForm
-	dialogTitle(c, t, "转存分享链接", "粘贴链接，提取码会自动识别")
-	ui.TextArea(c, &f.text).Lines(2, 4).AutoFocus().Placeholder("https://pan.baidu.com/s/1… 提取码: abcd").Label("分享链接")
-	link, pwd, ok := baidu.ParseShareLink(f.text)
-	if ok {
-		ui.Row(c).Gap(8).AlignItems(ui.Center).Padding(8, 12).Radius(10).Background(t.Accent.Alpha(0.1)).Transition(rowEnter).Children(func() {
-			ui.Icon(c, icon("link")).FontSize(15).TextColor(t.Accent)
-			ui.Text(c, strings.TrimPrefix(link, "https://")).SingleLine().Shrink(1)
-			ui.Spacer(c)
-			if pwd != "" {
-				ui.Text(c, "提取码 "+pwd).FontWeight(600).TextColor(t.Accent)
-			} else {
-				ui.Text(c, "未识别到提取码").TextColor(t.Warning)
-			}
-		})
-	}
-	ui.Text(c, "保存到").TextColor(t.TextMuted).FontSize(t.Rem(0.9))
-	a.folderChooser(c, t, p, &f.picker, 180, nil)
-	if a.dialogButtons(c, t, p, "保存到「"+dirLabel(f.picker.dir)+"」", false, !ok || len(pwd) != 4) {
-		dir := f.picker.dir
-		a.run(func(ctx context.Context, c *baidu.Client) error {
-			_, err := c.SaveShare(ctx, link, pwd, dir)
-			return err
-		}, []string{dir}, "已转存到「"+dirLabel(dir)+"」", nil)
-	}
 }
 
 // sharesState is the page of the account's shares.
@@ -302,7 +271,6 @@ func (a *App) sharesToolbar(c *ui.Context, t *ui.Theme, p *palette) {
 		a.loadShares()
 	}
 	if pill(c, t, p, "link", "转存链接", true).Clicked() {
-		a.ask(dlgSaveLink, "/", nil)
-		a.shareForm = shareForm{picker: picker{dir: "/"}}
+		a.openLink("", false)
 	}
 }

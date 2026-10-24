@@ -14,6 +14,7 @@ BAIDUNETGO_FAKE=1 go run .            # run against the in-process fake netdisk,
 go test ./...                         # all tests (app tests take ~30s)
 go test ./app -run TestPreviewImage -v
 go test -tags live ./internal/baidu -run Live -v   # real netdisk: QR endpoint, membership, ranges (uses BaiduPCS-Go's login)
+BAIDUNETGO_SHARE='https://pan.baidu.com/s/1…?pwd=abcd' go test -tags live ./internal/baidu -run LiveShare -v   # open someone's share, save an item into a folder deleted after
 BAIDUNETGO_SELFTEST=report.json BAIDUNETGO_PROBE=1 go run .   # self-test every feature against the real account, plus a speed probe
 go vet ./... && gofmt -l .
 go tool mygo build                    # package for this platform into build/
@@ -43,10 +44,12 @@ Dev-only environment variables (see `capture.go`, `app/app.go`, `app/session.go`
 **Overlays.** One `a.dlg` (`dialog` with a `dialogKind`) drives every modal through `a.dialogs`. The file preview is a separate overlay (`a.pv`, `previewOverlay`). The image preview and the grid/list thumbnails share `ui.ElementTransition{Match: thumbMatch{fsid}}`. The source thumbnail is skipped while `a.previewing(f)`, so the image grows out of it and shrinks back.
 
 **Netdisk client (`internal/baidu`).** `baidu.Open(creds)` builds a `baidupcs.BaiduPCS` from cookies and never touches BaiduPCS-Go's global config. It also turns TLS verification back on (the library disables it). Two code paths:
-- **Library calls** for `LocateDownload` (download links, which need the uid, fetched once from Tieba), upload (`internal/pcsport`, ported from BaiduPCS-Go's `internal/` under Apache-2.0), and share-link saving.
+- **Library calls** for `LocateDownload` (download links, which need the uid, fetched once from Tieba) and upload (`internal/pcsport`, ported from BaiduPCS-Go's `internal/` under Apache-2.0).
 - **The pan.baidu.com web API**, called directly through `getJSON`/`postForm` against `c.base`, for everything else: list (with `web=1` for thumbnails), file manager ops, recycle bin, shares, `cloud_dl`. Writes carry a `bdstoken`, fetched from `/api/loginStatus`.
 
-`baidu.OpenAt(creds, base)` points the client at a fake server. `c.fake()` swaps in fake-friendly behavior in the few library-bound paths (download URL, upload, save share). Errno -6/-4/111 maps to `ErrNotLoggedIn`, which signs the user out.
+**Someone else's share links** (`OpenShare`/`SharedDir`/`SaveShared` in `internal/baidu/share.go`): `/share/verify` trades the password for a `randsk`, which every later call carries as `sekey` and in the `BDCLND` cookie. An old `BDCLND` for `.baidu.com`, imported with the cookies, is sent first and hides the new one, so `OpenShare` overwrites it. `/api/shorturlinfo` gives the share's dates, `/share/list` its entries (numbers as strings at the top, as numbers in folders), the share's page the sharer's name and photo, and `/share/transfer` saves chosen fs_ids. The app (`app/sharelink.go`) opens a share link it finds on the clipboard as the window comes forward, once per link (`settings.SeenShare`; links it copied itself count as seen), and on Cmd-V in the browser. fakepan knows `fakepan.DemoShare` and the account's own shares.
+
+`baidu.OpenAt(creds, base)` points the client at a fake server. `c.fake()` swaps in fake-friendly behavior in the few library-bound paths (download URL, upload). Errno -6/-4/111 maps to `ErrNotLoggedIn`, which signs the user out.
 
 **Download hosts only serve bounded ranges.** `bytes=a-b` works. No Range header, or an open-ended `bytes=a-`, returns 403 (small files sometimes slip through). Every content read must therefore be bounded: `remote` (chunked, `remote.Parallel` at once), `transfer`, `tune`. mpv, whose ffmpeg sends open-ended ranges, reads through `internal/stream`, a loopback HTTP server with a random token per file. It splits requests into bounded chunks fetched `Ahead` at a time and re-requests the link when it expires. fakepan's `/file` enforces the same rule.
 

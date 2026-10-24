@@ -244,6 +244,7 @@ func (a *App) signOut() {
 
 // onSignedIn starts what the signed-in app shows.
 func (a *App) onSignedIn() {
+	a.clipCheck = true
 	a.startThumbs()
 	a.startTransfers()
 	if srv, err := stream.Start(a.sess.client, baidu.Expired); err == nil {

@@ -78,6 +78,7 @@ type Server struct {
 	nodes    map[string]*Node
 	trash    map[int64]*recycled
 	shares   []*share
+	demo     map[string]*Node // what the demo share, 1demo, shares
 	offlines []*offline
 	nextID   int64
 	// uploads are the parts sent of uploads not joined yet, by id.
@@ -89,6 +90,7 @@ func New() *Server {
 	s := &Server{nodes: map[string]*Node{}, nextID: 1000}
 	s.nodes["/"] = &Node{FsID: 1, Path: "/", IsDir: true}
 	s.seed()
+	s.seedShare()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/loginStatus", s.loginStatus)
 	mux.HandleFunc("/api/quota", s.quota)
@@ -132,10 +134,13 @@ func (s *Server) Add(n Node) *Node {
 	return s.add(n)
 }
 
-func (s *Server) add(n Node) *Node {
+func (s *Server) add(n Node) *Node { return s.addIn(s.nodes, n) }
+
+// addIn puts a node in a tree, the netdisk's or a share's.
+func (s *Server) addIn(nodes map[string]*Node, n Node) *Node {
 	n.Path = path.Clean("/" + n.Path)
-	if dir := path.Dir(n.Path); s.nodes[dir] == nil {
-		s.add(Node{Path: dir, IsDir: true, Mtime: n.Mtime})
+	if dir := path.Dir(n.Path); nodes[dir] == nil && dir != "/" {
+		s.addIn(nodes, Node{Path: dir, IsDir: true, Mtime: n.Mtime})
 	}
 	if n.FsID == 0 {
 		s.nextID++
@@ -147,7 +152,7 @@ func (s *Server) add(n Node) *Node {
 	if n.Data != nil {
 		n.Size = int64(len(n.Data))
 	}
-	s.nodes[n.Path] = &n
+	nodes[n.Path] = &n
 	return &n
 }
 
@@ -239,9 +244,11 @@ func (s *Server) entry(n *Node) map[string]any {
 	return e
 }
 
-func (s *Server) children(dir string) []*Node {
+func (s *Server) children(dir string) []*Node { return childrenIn(s.nodes, dir) }
+
+func childrenIn(nodes map[string]*Node, dir string) []*Node {
 	var out []*Node
-	for p, n := range s.nodes {
+	for p, n := range nodes {
 		if p != "/" && path.Dir(p) == dir {
 			out = append(out, n)
 		}
@@ -304,6 +311,11 @@ func (s *Server) thumb(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseInt(r.URL.Query().Get("id"), 10, 64)
 	s.mu.Lock()
 	n := s.byID(id)
+	for _, d := range s.demo {
+		if n == nil && d.FsID == id {
+			n = d
+		}
+	}
 	s.mu.Unlock()
 	if n != nil && n.Data != nil && n.Category == 3 {
 		w.Write(n.Data)
