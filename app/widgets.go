@@ -1,8 +1,7 @@
 package app
 
 import (
-	"strconv"
-	"strings"
+	"slices"
 	"time"
 
 	"github.com/egoist/mygo/ui"
@@ -90,113 +89,32 @@ func figure(c *ui.Context, s string) ui.Element {
 	return ui.Text(c, s).FontFeatures("tnum").SingleLine()
 }
 
-// numberField is a whole number in a capsule between a minus and a plus,
-// its unit after the capsule: typed into, or stepped, and on and on while a sign is
-// held, between lo and hi. Zero reads as none when that is given. It
+// numberChoice is a whole number chosen from a pop-up of presets, as
+// System Settings chooses its numbers: the value itself among them when it
+// is none of them, as a measured one may be, and zero read as none when
+// that is given. The unit goes by the setting's name, not here. It
 // reports a new value.
-func numberField(c *ui.Context, t *ui.Theme, p *palette, value *float64, lo, hi, step float64, unit, none, label string) bool {
-	changed := false
-	set := func(v float64) {
-		if v = max(lo, min(hi, v)); v != *value {
-			*value, changed = v, true
-		}
+func numberChoice(c *ui.Context, t *ui.Theme, p *palette, value *int, presets []int, none, label string) bool {
+	values := slices.Clone(presets)
+	if !slices.Contains(values, *value) {
+		values = append(values, *value)
+		slices.Sort(values)
 	}
-	format := func(v float64) string {
+	labels := make([]string, len(values))
+	for i, v := range values {
+		labels[i] = itoa(v)
 		if v == 0 && none != "" {
-			return none
+			labels[i] = none
 		}
-		return strconv.FormatFloat(v, 'f', 0, 64)
 	}
-	var text *string
-	ui.Row(c).Gap(6).AlignItems(ui.Center).Shrink(0).Children(func() {
-		capsule := ui.Row(c).Height(28).Radius(14).Padding(0, 2).AlignItems(ui.Center).Background(p.Control)
-		text = ui.Local(capsule, "text", func() string { return format(*value) })
-		capsule.Children(func() {
-			sign := func(ic, name string, by float64) {
-				can := by < 0 && *value > lo || by > 0 && *value < hi
-				// Not disabled at its end, which would lose the release
-				// of a press holding it there.
-				b := ui.ButtonBase(c).Label(name).Size(24, 24).Radius(12).Center().TextColor(t.Text)
-				n, down := held(c, b)
-				if !can {
-					b.TextColor(t.TextMuted.Alpha(0.5))
-				} else if down {
-					b.Background(t.SurfacePressed)
-				} else if b.Hovered() {
-					b.Background(t.SurfaceHover)
-				}
-				b.Children(func() { ui.Icon(c, icon(ic)).FontSize(12) })
-				if can && n > 0 {
-					set(*value + by*float64(n))
-				}
-			}
-			sign("minus", "减少"+label, -step)
-			in := ui.TextInputBase(c, text).Label(label).Width(48).Height(24).TextAlign(ui.Center).FontFeatures("tnum").SingleLine()
-			if in.Changed() {
-				if v, err := strconv.ParseFloat(strings.TrimSpace(*text), 64); err == nil && v >= lo && v <= hi {
-					set(v)
-				}
-			}
-			if !in.Focused() {
-				*text = format(*value)
-			}
-			sign("plus", "增加"+label, step)
-		})
-		if unit != "" && (*value != 0 || none == "") {
-			ui.Text(c, unit).FontSize(12).TextColor(t.TextMuted).SingleLine()
-		}
-	})
-	if changed {
-		*text = format(*value)
-	}
-	return changed
-}
-
-// held is how many steps a stepping button owes this frame, and whether
-// it is held: one as it is pressed, or chosen from the keyboard, and,
-// held, more after a while and then faster, as AppKit's. The press is
-// followed wherever the pointer goes, so a button that moves away from
-// it, as a capsule does when its unit comes in, keeps stepping.
-func held(c *ui.Context, b ui.Element) (int, bool) {
-	type hold struct {
-		down, fresh bool
-		start       time.Time
-		steps       int
-	}
-	h := ui.Local(b, "hold", func() hold { return hold{} })
-	b.HandleInput(func(ev ui.InputEvent) bool {
-		switch ev.Kind {
-		case ui.InputPointerDown:
-			h.down, h.fresh = true, true
-			return true
-		case ui.InputPointerUp:
-			h.down = false
-			return true
-		}
+	chosen := slices.Index(values, *value)
+	was := chosen
+	popUp(c, t, p, &chosen, labels, nil).Label(label)
+	if chosen == was {
 		return false
-	})
-	if b.Clicked() {
-		return 1, false
 	}
-	now := c.Now()
-	if h.fresh {
-		h.fresh, h.start, h.steps = false, now, 0
-	}
-	if h.start.IsZero() {
-		return 0, false
-	}
-	due := 1
-	if d := now.Sub(h.start); h.down && d > 400*time.Millisecond {
-		due += int((d - 400*time.Millisecond) / (80 * time.Millisecond))
-	}
-	n := due - h.steps
-	h.steps = due
-	if h.down {
-		c.After(80 * time.Millisecond)
-	} else {
-		h.start = time.Time{}
-	}
-	return n, h.down
+	*value = values[chosen]
+	return true
 }
 
 // chip is a small rounded label tinted with a color, as for a membership

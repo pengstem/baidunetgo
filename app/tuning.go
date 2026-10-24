@@ -125,13 +125,13 @@ func (a *App) tuneSection(c *ui.Context, t *ui.Theme, p *palette) {
 	s := &a.settings
 	cfg := a.transferConfig()
 	section(c, t, p, "传输", func() {
-		settingRow(c, t, p, "下载位置", tildePath(s.downloadDir()), func() {
+		settingRow(c, t, p, "下载位置", "", tildePath(s.downloadDir()), func() {
 			if pill(c, t, p, "", "更改…", false).Clicked() {
 				a.pickDownloadDir()
 			}
 		})
 		auto := !s.Manual
-		settingRow(c, t, p, "自动优化传输", "", func() {
+		settingRow(c, t, p, "自动优化传输", "", "", func() {
 			if ui.Switch(c, &auto).Label("自动优化传输").Changed() {
 				s.Manual = !auto
 				if !s.Manual {
@@ -146,40 +146,31 @@ func (a *App) tuneSection(c *ui.Context, t *ui.Theme, p *palette) {
 			}
 		})
 		// Shown either way: the host and block size stay measured when
-		// the counts are chosen by hand, and the rows under it hold still.
+		// the counts are chosen by hand.
 		a.tuneResult(c, t, p, cfg)
-		manual := func() {
-			s.Manual = true
-			a.applySettings()
+		// Chosen by hand only: what auto-tuning chose shows in the
+		// measurement's details.
+		threads, parallel, upload := cfg.Threads, cfg.Parallel, cfg.Upload
+		count := func(name, detail string, v *int, presets []int) {
+			settingRow(c, t, p, name, "", detail, func() {
+				if numberChoice(c, t, p, v, presets, "", name) {
+					s.Threads, s.Parallel, s.Upload = threads, parallel, upload
+					a.applySettings()
+				}
+			})
 		}
-		threads, parallel, upload := float64(cfg.Threads), float64(cfg.Parallel), float64(cfg.Upload)
 		threadsDetail := ""
-		if !auto && a.vip() == 0 {
+		if a.vip() == 0 {
 			threadsDetail = "非会员建议 1–4"
 		}
-		settingRow(c, t, p, "每个文件的连接数", threadsDetail, func() {
-			if numberField(c, t, p, &threads, 1, 64, 1, "", "", "每个文件的连接数") {
-				s.Threads, s.Parallel, s.Upload = int(threads), cfg.Parallel, cfg.Upload
-				manual()
-			}
-		})
-		settingRow(c, t, p, "同时传输的文件数", "", func() {
-			if numberField(c, t, p, &parallel, 1, 6, 1, "", "", "同时传输的文件数") {
-				s.Threads, s.Parallel, s.Upload = cfg.Threads, int(parallel), cfg.Upload
-				manual()
-			}
-		})
-		settingRow(c, t, p, "每个上传的连接数", "", func() {
-			if numberField(c, t, p, &upload, 1, 32, 1, "", "", "每个上传的连接数") {
-				s.Threads, s.Parallel, s.Upload = cfg.Threads, cfg.Parallel, int(upload)
-				manual()
-			}
-		})
+		if !auto {
+			count("每个文件的连接数", threadsDetail, &threads, []int{1, 2, 4, 8, 16, 32, 64})
+			count("同时传输的文件数", "", &parallel, []int{1, 2, 3, 4, 5, 6})
+			count("每个上传的连接数", "", &upload, []int{1, 2, 4, 8, 16, 32})
+		}
 		limit := func(name string, mbps *int) {
-			v := float64(*mbps)
-			settingRow(c, t, p, name, "", func() {
-				if numberField(c, t, p, &v, 0, 1000, 1, "MB/s", "不限", name) {
-					*mbps = int(v)
+			settingRow(c, t, p, name, "MB/s", "", func() {
+				if numberChoice(c, t, p, mbps, []int{0, 1, 2, 5, 10, 20, 50, 100}, "不限速", name) {
 					a.applySettings()
 				}
 			})
@@ -223,7 +214,7 @@ func (a *App) tuneResult(c *ui.Context, t *ui.Theme, p *palette, cfg tune.Config
 		detail = humanTime(r.At.Unix(), c.Now()) + " · 约 " + humanSpeed(r.Total(cfg))
 	}
 	ui.Column(c).Children(func() {
-		settingRow(c, t, p, "实测速度", detail, func() {
+		settingRow(c, t, p, "实测速度", "", detail, func() {
 			if r != nil {
 				d := ui.ButtonBase(c).Label("详情").Height(28).PaddingX(8).Radius(7).Gap(3).AlignItems(ui.Center).TextColor(t.TextMuted)
 				if d.Hovered() {

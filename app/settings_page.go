@@ -51,13 +51,11 @@ func (a *App) settingsPage(c *ui.Context, t *ui.Theme, p *palette) {
 			a.accountSection(c, t, p)
 			a.tuneSection(c, t, p)
 			section(c, t, p, "预览", func() {
-				mb := float64(s.PreviewMB)
-				if mb == 0 {
-					mb = 50
+				if s.PreviewMB == 0 {
+					s.PreviewMB = 50
 				}
-				settingRow(c, t, p, "内存预览上限", "更大的图片、文档会先下载再打开", func() {
-					if numberField(c, t, p, &mb, 10, 2000, 10, "MB", "", "内存预览上限") {
-						s.PreviewMB = int(math.Round(mb))
+				settingRow(c, t, p, "内存预览上限", "MB", "更大的图片、文档会先下载再打开", func() {
+					if numberChoice(c, t, p, &s.PreviewMB, []int{20, 50, 100, 200, 500, 1000, 2000}, "", "内存预览上限") {
 						a.applySettings()
 					}
 				})
@@ -66,7 +64,7 @@ func (a *App) settingsPage(c *ui.Context, t *ui.Theme, p *palette) {
 				if err != nil {
 					detail = "未找到，视频无法播放"
 				}
-				settingRow(c, t, p, "mpv 播放器", detail, func() {
+				settingRow(c, t, p, "mpv 播放器", "", detail, func() {
 					if s.MPV != "" && pill(c, t, p, "", "自动查找", false).Clicked() {
 						s.MPV = ""
 						a.applySettings()
@@ -77,7 +75,7 @@ func (a *App) settingsPage(c *ui.Context, t *ui.Theme, p *palette) {
 				})
 			})
 			section(c, t, p, "关于", func() {
-				settingRow(c, t, p, "BaiduNetGo", version()+" · 百度网盘的原生桌面客户端", func() {
+				settingRow(c, t, p, "BaiduNetGo", "", version()+" · 百度网盘的原生桌面客户端", func() {
 					if pill(c, t, p, "external-link", "项目主页", false).Clicked() {
 						c.OpenURL("https://github.com/pengstem/baidunetgo")
 					}
@@ -96,12 +94,17 @@ func section(c *ui.Context, t *ui.Theme, p *palette, title string, rows func()) 
 	})
 }
 
-// settingRow is one setting: what it is with a line more under it when
-// needed, and its control at the end.
-func settingRow(c *ui.Context, t *ui.Theme, p *palette, title, detail string, control func()) {
+// settingRow is one setting: what it is, in what unit when it is a number,
+// with a line more under it when needed, and its control at the end.
+func settingRow(c *ui.Context, t *ui.Theme, p *palette, title, unit, detail string, control func()) {
 	ui.Row(c).MinHeight(48).Padding(8, 0).Gap(12).AlignItems(ui.Center).Children(func() {
 		ui.Column(c).Grow(1).Shrink(1).Gap(2).Children(func() {
-			ui.Text(c, title).SingleLine()
+			ui.Row(c).Gap(5).AlignItems(ui.Baseline).Children(func() {
+				ui.Text(c, title).SingleLine().Shrink(1)
+				if unit != "" {
+					ui.Text(c, unit).FontSize(12).TextColor(t.TextMuted).SingleLine()
+				}
+			})
 			if detail != "" {
 				ui.Text(c, detail).FontSize(11).TextColor(t.TextMuted).SingleLine()
 			}
@@ -174,7 +177,7 @@ func (a *App) accountSection(c *ui.Context, t *ui.Theme, p *palette) {
 		})
 		if q := sess.quota; q.Total > 0 {
 			frac := float32(q.Used) / float32(q.Total)
-			settingRow(c, t, p, "网盘空间", "已用 "+humanSize(q.Used)+"，共 "+humanSize(q.Total), func() {
+			settingRow(c, t, p, "网盘空间", "", "已用 "+humanSize(q.Used)+"，共 "+humanSize(q.Total), func() {
 				fill := t.Accent
 				if frac > 0.9 {
 					fill = t.Danger

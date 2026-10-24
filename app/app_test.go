@@ -177,53 +177,42 @@ func TestSettingsPage(t *testing.T) {
 	save(t, tt, "settings-dark")
 }
 
-// TestSettingsNumbers steps a number with its plus, on and on while the
-// plus is held, and types one into it.
+// TestSettingsNumbers chooses numbers from their pop-ups, the counts
+// showing only once they are chosen by hand.
 func TestSettingsNumbers(t *testing.T) {
 	a, tt, _ := signedIn(t)
 	a.router.Push("/settings")
 	waitFor(t, tt, "下载位置")
 	tt.Advance(time.Second)
-	if err := tt.Click("增加下载限速"); err != nil {
-		t.Fatal(err)
+	if tt.HasText("每个文件的连接数") {
+		t.Error("counts shown while tuned automatically")
 	}
-	tt.Advance(100 * time.Millisecond)
-	if a.settings.DownLimit != 1 {
-		t.Errorf("download limit %d after a step, want 1", a.settings.DownLimit)
+	choose := func(shown, item string) {
+		t.Helper()
+		if err := tt.Click(shown); err != nil {
+			t.Fatal(err)
+		}
+		if err := tt.ChooseMenuItem(item); err != nil {
+			t.Fatalf("%v; menu %q", err, tt.Menu())
+		}
+		tt.Advance(100 * time.Millisecond)
 	}
-
-	// Held from none, the plus keeps stepping though the unit coming in
-	// moves the capsule.
-	r, _ := tt.Find("增加上传限速")
-	tt.Press(r.X+r.W/2, r.Y+r.H/2)
-	for range 20 {
-		tt.Advance(50 * time.Millisecond)
-	}
-	tt.Release(r.X+r.W/2, r.Y+r.H/2)
-	tt.Advance(100 * time.Millisecond)
-	if a.settings.UpLimit < 5 {
-		t.Errorf("upload limit %d held a second from none, want several steps", a.settings.UpLimit)
+	choose("不限速", "10")
+	if a.settings.DownLimit != 10 || a.settings.UpLimit != 0 {
+		t.Errorf("limits %d down, %d up after choosing 10 for downloads", a.settings.DownLimit, a.settings.UpLimit)
 	}
 
-	before := a.transferConfig().Threads
-	r, _ = tt.Find("增加每个文件的连接数")
-	tt.Press(r.X+r.W/2, r.Y+r.H/2)
-	for range 20 {
-		tt.Advance(50 * time.Millisecond)
+	// The switch is at the end of its row, under 重测's.
+	row, _ := tt.Find("自动优化传输")
+	end, _ := tt.Find("重测")
+	tt.ClickAt(end.X+end.W-12, row.Y+row.H/2)
+	tt.Advance(time.Second)
+	if !a.settings.Manual || !tt.HasText("每个文件的连接数") {
+		t.Fatalf("manual %v, counts not shown after the switch; texts %q", a.settings.Manual, tt.Texts())
 	}
-	tt.Release(r.X+r.W/2, r.Y+r.H/2)
-	tt.Advance(100 * time.Millisecond)
-	if got := a.transferConfig().Threads; got < before+5 || !a.settings.Manual {
-		t.Errorf("threads %d → %d held a second (manual %v), want several steps", before, got, a.settings.Manual)
-	}
-
-	r, _ = tt.Find("减少上传限速")
-	tt.ClickAt(r.X+r.W+30, r.Y+r.H/2)
-	tt.Key(ui.Cmd, ui.KeyA)
-	tt.Type("12")
-	tt.Advance(100 * time.Millisecond)
-	if a.settings.UpLimit != 12 {
-		t.Errorf("upload limit %d after typing 12", a.settings.UpLimit)
+	choose(itoa(a.transferConfig().Threads), "4")
+	if got := a.transferConfig().Threads; got != 4 {
+		t.Errorf("threads %d after choosing 4", got)
 	}
 	tt.SetDark(true)
 	tt.Advance(500 * time.Millisecond)
