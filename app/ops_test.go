@@ -276,6 +276,11 @@ func TestNarrowSelectionBar(t *testing.T) {
 		t.Fatalf("no label at full width: %v", r)
 	}
 	tt.SetSize(780, 600)
+	// The labels fold away rather than vanish, though the window resized.
+	tt.Advance(90 * time.Millisecond)
+	if r, _ := tt.Find("重命名"); r.W < 35 || r.W > 70 {
+		t.Errorf("the labels did not fold away over time: %v", r)
+	}
 	tt.Advance(time.Second)
 	save(t, tt, "selection-bar-narrow")
 	if r, _ := tt.Find("重命名"); r.W > 40 {

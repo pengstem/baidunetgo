@@ -293,7 +293,9 @@ const selBarLabels = 660
 // selectionBar floats over the browser while files are chosen, with what
 // can be done to them. On a page narrower than selBarLabels (last frame's
 // width) the actions show only their icons, so the bar never squeezes the
-// count into a column.
+// count into a column. The labels fold away and open out over motionPanel
+// through an animated value, not a Transition: they change as the window
+// resizes, and MyGo skips layout transitions on those frames.
 func (a *App) selectionBar(c *ui.Context, t *ui.Theme, p *palette, l *listing, width float32) {
 	files := l.chosen()
 	if len(files) == 0 {
@@ -304,18 +306,22 @@ func (a *App) selectionBar(c *ui.Context, t *ui.Theme, p *palette, l *listing, w
 		Padding(4, 4, 4, 14).Gap(2).Radius(12).AlignItems(ui.Center).
 		Background(p.Card).Border(1, p.Hairline).Shadow(0, 8, 24, -10, p.Shadow).
 		Transition(ui.ElementTransition{Animation: &motionFade, Enter: &ui.Motion{Y: 8, Opacity: 0}, Exit: &ui.Motion{Opacity: 0}})
+	shown := bar.AnimateTo("labels", map[bool]float32{true: 1, false: 0}[labels], motionPanel)
 	bar.Children(func() {
 		ui.Text(c, "已选 "+itoa(len(files))+" 项").FontWeight(500).Margin(0, 10, 0, 0).FontFeatures("tnum").
 			SingleLine().Shrink(0).ContentTransition(ui.ContentTransition{Numeric: true})
 		button := func(ic, label string) ui.Element {
-			b := ui.ButtonBase(c).Label(label).Height(28).PaddingX(10).Radius(7).Gap(6).AlignItems(ui.Center).Shrink(0)
+			b := ui.ButtonBase(c).Label(label).Height(28).PaddingX(7 + 3*shown).Radius(7).Gap(6 * shown).AlignItems(ui.Center).Shrink(0)
 			if !labels {
-				b.Tooltip(label).PaddingX(7)
+				b.Tooltip(label)
 			}
 			b.Children(func() {
 				ui.Icon(c, icon(ic)).FontSize(15)
-				if labels {
-					ui.Text(c, label).SingleLine()
+				if shown > 0 {
+					w, _ := c.MeasureText(0, ui.Span{Text: label})
+					ui.Box(c).Width(w * shown).Shrink(0).Clip().Opacity(shown).Children(func() {
+						ui.Text(c, label).SingleLine().Width(w).Shrink(0)
+					})
 				}
 			})
 			return b
