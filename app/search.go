@@ -166,12 +166,20 @@ func (a *App) searchField(c *ui.Context, t *ui.Theme, p *palette) {
 			}
 		}
 	})
+	// In a narrow title bar it folds into a round button, as Finder's
+	// does, which opens it, leaving the room to the path.
 	w := float32(170)
-	if a.compact {
-		w = 120
-	}
 	if in.Focused() || a.query != "" {
 		w = 240
+	} else if a.compact {
+		w = 28
+		f.Tooltip("搜索")
+		if f.Hovered() {
+			f.Background(t.SurfaceHover)
+		}
+		if f.Clicked() {
+			in.Focus()
+		}
 	}
 	f.Width(f.AnimateTo("w", w, motionPanel))
 	if in.Focused() && in.Shortcut(0, ui.KeyEscape) {

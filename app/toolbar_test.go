@@ -1,9 +1,14 @@
 package app
 
 import (
+	"path"
 	"slices"
 	"testing"
 	"time"
+
+	"github.com/egoist/mygo/ui"
+
+	"github.com/pengstem/baidunetgo/internal/fakepan"
 )
 
 // TestSortMenu sorts the grid from the title bar's menu.
@@ -45,6 +50,19 @@ func TestCompactToolbar(t *testing.T) {
 		t.Fatal("not compact in a narrow window")
 	}
 	save(t, tt, "compact-files")
+	// The search field folded to a round button, which opens it.
+	r, _ := tt.Find("搜索网盘")
+	tt.ClickAt(r.X, r.Y+r.H/2)
+	tt.Advance(time.Second)
+	if !tt.Focused("搜索网盘") {
+		t.Error("a click on the folded search did not open it")
+	}
+	if r, _ := tt.Find("搜索网盘"); r.W < 100 {
+		t.Errorf("the open search field is %v wide", r.W)
+	}
+	tt.Key(0, ui.KeyEscape)
+	tt.ClickAt(600, 400)
+	tt.Advance(time.Second)
 	if err := tt.Click("视图"); err != nil {
 		t.Fatal(err)
 	}
@@ -68,4 +86,44 @@ func TestCompactToolbar(t *testing.T) {
 	if a.transfers.tab != 1 {
 		t.Errorf("tab %d", a.transfers.tab)
 	}
+}
+
+// TestPathFolds folds the folders above a deep folder with long names into
+// "…" in a narrow window, keeping the folder's own name, and goes to one
+// of them from its menu.
+func TestPathFolds(t *testing.T) {
+	a, tt, srv := signedIn(t)
+	dir := "/数学建模美赛资料合集（2026版）/历年真题与优秀论文完整汇编/附录与评审标准说明文件夹"
+	srv.Add(fakepan.Node{Path: dir + "/说明.txt", Data: []byte("hi")})
+	a.router.Push(filesRoute(dir))
+	waitFor(t, tt, "说明.txt")
+	tt.SetSize(1500, 760)
+	tt.Advance(time.Second)
+	if _, ok := tt.Find("上层文件夹"); ok {
+		t.Error("the path folded in a wide window")
+	}
+	save(t, tt, "path-wide")
+	tt.SetSize(760, 600)
+	tt.Advance(time.Second)
+	save(t, tt, "path-narrow")
+	if !tt.HasText("附录与评审标准说明文件夹") {
+		t.Errorf("the folder's name is gone; texts %q", tt.Texts())
+	}
+	if err := tt.Click("上层文件夹"); err != nil {
+		t.Fatal(err)
+	}
+	m := tt.Menu()
+	if len(m) == 0 || m[0] != "历年真题与优秀论文完整汇编" {
+		t.Fatalf("menu %q", m)
+	}
+	if err := tt.ChooseMenuItem(m[0]); err != nil {
+		t.Fatal(err)
+	}
+	tt.Advance(time.Second)
+	if want := path.Dir(dir); a.currentDir() != want {
+		t.Errorf("dir %q, want %q", a.currentDir(), want)
+	}
+	tt.SetSize(560, 600)
+	tt.Advance(time.Second)
+	save(t, tt, "path-narrower")
 }

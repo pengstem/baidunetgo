@@ -2,6 +2,7 @@ package app
 
 import (
 	"path"
+	"slices"
 	"strings"
 	"time"
 
@@ -513,44 +514,43 @@ func (a *App) fileMenu(e ui.Element, l *listing, i int) {
 }
 
 // breadcrumbs shows where the browser is: the folder as the title, the
-// folders above it as links before it, and under them what it holds.
+// folders above it as links before it, and under them what it holds. It
+// takes the room the tools leave, and when the path is wider than that it
+// folds the folders above into "…" from the top down, as Finder's path
+// bar does, so the folder's own name goes last: "…" opens a menu of those
+// it folded, and only a name too long for the room alone shortens.
 func (a *App) breadcrumbs(c *ui.Context, t *ui.Theme, p *palette, dir string) {
 	parts := []string{"/"}
 	if dir != "/" {
 		parts = append(parts, strings.Split(strings.TrimPrefix(dir, "/"), "/")...)
 	}
-	start := 0
-	if len(parts) > 4 {
-		start = len(parts) - 3
-	}
-	ui.Column(c).Shrink(1).Gap(1).Children(func() {
-		ui.Row(c).Gap(1).AlignItems(ui.Center).Shrink(1).ClipX().Children(func() {
+	labels := slices.Clone(parts)
+	labels[0] = "我的文件"
+	col := ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(1)
+	from, root := fitCrumbs(c, labels, col.Bounds().W)
+	target := func(i int) string { return "/" + path.Join(parts[1:i+1]...) }
+	col.Children(func() {
+		ui.Row(c).Gap(1).AlignItems(ui.Center).Shrink(1).MinWidth(0).ClipX().Children(func() {
+			chevron := func() { ui.Icon(c, icon("chevron-right")).FontSize(12).TextColor(p.Faint) }
 			for i := range parts {
-				if i > 0 && i < start {
+				if i < from && !(i == 0 && root) {
 					continue
 				}
-				if i > 0 {
-					ui.Icon(c, icon("chevron-right")).FontSize(12).TextColor(p.Faint)
+				if i > 0 && (i != from || root) {
+					chevron()
 				}
-				if i == 1 && start > 1 {
-					ui.Text(c, "…").TextColor(t.TextMuted).PaddingX(3).Tooltip(strings.Join(parts[1:start], " / "))
-					ui.Icon(c, icon("chevron-right")).FontSize(12).TextColor(p.Faint)
+				if i == from && from > 0 {
+					a.foldedCrumbs(c, t, labels, from, root, target)
+					chevron()
 				}
-				label := parts[i]
-				if i == 0 {
-					label = "我的文件"
-				}
+				label := labels[i]
 				last := i == len(parts)-1
-				// The tip tells the whole path, as the crumbs shorten long
-				// names and fold the middle of a deep one into "…".
-				tip := "我的文件"
-				if i > 0 {
-					tip += " / " + strings.Join(parts[1:i+1], " / ")
-				}
-				crumb := ui.ButtonBase(c.Key(i)).Label(label).Tooltip(tip).PaddingX(3).Radius(4).Shrink(1).FontSize(14).
+				// The tip tells the whole path, as the name may be cut short.
+				tip := strings.Join(labels[:i+1], " / ")
+				crumb := ui.ButtonBase(c.Key(i)).Label(label).Tooltip(tip).PaddingX(3).Radius(4).Shrink(0).FontSize(14).
 					Transition(ui.ElementTransition{Animation: &motionPanel, Enter: &ui.Motion{X: 6, Opacity: 0}, Exit: &ui.Motion{Opacity: 0}})
 				if last {
-					crumb.FontWeight(700)
+					crumb.FontWeight(700).Shrink(1).MinWidth(0)
 				} else {
 					crumb.FontWeight(500).TextColor(t.TextMuted)
 					if crumb.Hovered() {
@@ -559,14 +559,84 @@ func (a *App) breadcrumbs(c *ui.Context, t *ui.Theme, p *palette, dir string) {
 				}
 				crumb.Children(func() { ui.Text(c, label).SingleLine() })
 				if crumb.Clicked() && !last {
-					target := "/" + path.Join(parts[1:i+1]...)
-					a.router.Push(filesRoute(target))
+					a.router.Push(filesRoute(target(i)))
 				}
 			}
 		})
 		sub := filesSubtitle(a.listingFor(dir))
 		ui.Text(c, sub).Tooltip(sub).FontSize(11).PaddingX(3).TextColor(t.TextMuted).SingleLine().FontFeatures("tnum")
 	})
+}
+
+// foldedCrumbs is the "…" standing for the folders the path folded, those
+// before from (but the top one when root keeps it out): a menu of them,
+// the nearest first, as Finder lists a folder's parents.
+func (a *App) foldedCrumbs(c *ui.Context, t *ui.Theme, labels []string, from int, root bool, target func(int) string) {
+	first := 0
+	if root {
+		first = 1
+	}
+	b := ui.ButtonBase(c.Key("folded")).Label("上层文件夹").Tooltip(strings.Join(labels[first:from], " / ")).
+		PaddingX(4).Radius(4).Shrink(0).FontSize(14).FontWeight(500).TextColor(t.TextMuted)
+	if b.Hovered() {
+		b.TextColor(t.Text)
+	}
+	b.Children(func() { ui.Text(c, "…") })
+	b.Menu(func(m *ui.Menu) {
+		for i := from - 1; i >= first; i-- {
+			if m.Item(labels[i]).Chosen() {
+				a.router.Push(filesRoute(target(i)))
+			}
+		}
+	})
+}
+
+// fitCrumbs chooses which crumbs of a path fit in room DIPs: those from
+// from on, after a "…" for the rest when from > 0, and with root the top
+// one kept before the "…". It folds from the top down, keeping the top
+// while it can, and at worst shows "…" and the last, which then shortens.
+// No room yet (the first frame) shows them all.
+func fitCrumbs(c *ui.Context, labels []string, room float32) (from int, root bool) {
+	if room <= 0 {
+		return 0, true
+	}
+	const pad, chevron = 6, 13 // a crumb's padding; a chevron and the gaps by it
+	widths := make([]float32, len(labels))
+	for i, l := range labels {
+		weight := 500
+		if i == len(labels)-1 {
+			weight = 700
+		}
+		w, _ := c.MeasureText(0, ui.Span{Text: l, Size: 14, Weight: weight})
+		widths[i] = w + pad
+	}
+	ellipsis, _ := c.MeasureText(0, ui.Span{Text: "…", Size: 14, Weight: 500})
+	ellipsis += 8 + chevron
+	// tail is the width of the crumbs from i on, with the chevrons before
+	// all but the first.
+	tail := func(i int) float32 {
+		var w float32
+		for _, x := range widths[i:] {
+			w += x + chevron
+		}
+		return w - chevron
+	}
+	last := len(labels) - 1
+	for from := 0; from <= last; from++ {
+		w := tail(from)
+		if from == 1 {
+			continue // the top kept and nothing folded is from 0
+		} else if from > 1 {
+			w += widths[0] + chevron + ellipsis
+		}
+		if w <= room {
+			return from, true
+		}
+	}
+	if last == 0 {
+		return 0, true
+	}
+	return last, false
 }
 
 // filesToolbar is the title bar's controls while browsing.
@@ -580,7 +650,6 @@ func (a *App) filesToolbar(c *ui.Context, t *ui.Theme, p *palette, dir string) {
 		}
 	})
 	a.breadcrumbs(c, t, p, dir)
-	ui.Spacer(c)
 	a.searchField(c, t, p)
 	if a.gridView {
 		a.sortMenu(c, t, p)
@@ -592,7 +661,7 @@ func (a *App) filesToolbar(c *ui.Context, t *ui.Theme, p *palette, dir string) {
 	if toolButton(c, t, p, "refresh-cw", "刷新").Clicked() {
 		a.reload(dir)
 	}
-	if pill(c, t, p, "upload", "上传", true).Clicked() {
+	if pillOf(c, t, p, "upload", "上传", true, a.compact).Clicked() {
 		a.pickUpload(dir)
 	}
 }
