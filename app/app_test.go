@@ -192,8 +192,21 @@ func TestSettingsNumbers(t *testing.T) {
 		t.Errorf("download limit %d after a step, want 1", a.settings.DownLimit)
 	}
 
+	// Held from none, the plus keeps stepping though the unit coming in
+	// moves the capsule.
+	r, _ := tt.Find("增加上传限速")
+	tt.Press(r.X+r.W/2, r.Y+r.H/2)
+	for range 20 {
+		tt.Advance(50 * time.Millisecond)
+	}
+	tt.Release(r.X+r.W/2, r.Y+r.H/2)
+	tt.Advance(100 * time.Millisecond)
+	if a.settings.UpLimit < 5 {
+		t.Errorf("upload limit %d held a second from none, want several steps", a.settings.UpLimit)
+	}
+
 	before := a.transferConfig().Threads
-	r, _ := tt.Find("增加每个文件的连接数")
+	r, _ = tt.Find("增加每个文件的连接数")
 	tt.Press(r.X+r.W/2, r.Y+r.H/2)
 	for range 20 {
 		tt.Advance(50 * time.Millisecond)
@@ -212,6 +225,9 @@ func TestSettingsNumbers(t *testing.T) {
 	if a.settings.UpLimit != 12 {
 		t.Errorf("upload limit %d after typing 12", a.settings.UpLimit)
 	}
+	tt.SetDark(true)
+	tt.Advance(500 * time.Millisecond)
+	save(t, tt, "settings-numbers")
 }
 
 func TestTuneFromSettings(t *testing.T) {

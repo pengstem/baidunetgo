@@ -114,16 +114,19 @@ func numberField(c *ui.Context, t *ui.Theme, p *palette, value *float64, lo, hi,
 		capsule.Children(func() {
 			sign := func(ic, name string, by float64) {
 				can := by < 0 && *value > lo || by > 0 && *value < hi
-				b := ui.ButtonBase(c).Label(name).Size(24, 24).Radius(12).Center().TextColor(t.Text).Disabled(!can)
+				// Not disabled at its end, which would lose the release
+				// of a press holding it there.
+				b := ui.ButtonBase(c).Label(name).Size(24, 24).Radius(12).Center().TextColor(t.Text)
+				n, down := held(c, b)
 				if !can {
 					b.TextColor(t.TextMuted.Alpha(0.5))
-				} else if b.Pressed() {
+				} else if down {
 					b.Background(t.SurfacePressed)
 				} else if b.Hovered() {
 					b.Background(t.SurfaceHover)
 				}
 				b.Children(func() { ui.Icon(c, icon(ic)).FontSize(12) })
-				if n := held(c, b); can && n > 0 {
+				if can && n > 0 {
 					set(*value + by*float64(n))
 				}
 			}
@@ -139,12 +142,8 @@ func numberField(c *ui.Context, t *ui.Theme, p *palette, value *float64, lo, hi,
 			}
 			sign("plus", "增加"+label, step)
 		})
-		// The unit has a place of its own width after every capsule, filled
-		// or not, so that the capsules of a page line up and hold still
-		// as a value turns to none.
-		u := ui.Text(c, unit).Width(30).FontSize(12).TextColor(t.TextMuted).SingleLine()
-		if *value == 0 && none != "" {
-			u.Opacity(0)
+		if unit != "" && (*value != 0 || none == "") {
+			ui.Text(c, unit).FontSize(12).TextColor(t.TextMuted).SingleLine()
 		}
 	})
 	if changed {
@@ -153,30 +152,51 @@ func numberField(c *ui.Context, t *ui.Theme, p *palette, value *float64, lo, hi,
 	return changed
 }
 
-// held is how many steps a stepping button owes this frame: one as it is
-// pressed and, held, more after a while and then faster, as AppKit's.
-func held(c *ui.Context, b ui.Element) int {
+// held is how many steps a stepping button owes this frame, and whether
+// it is held: one as it is pressed, or chosen from the keyboard, and,
+// held, more after a while and then faster, as AppKit's. The press is
+// followed wherever the pointer goes, so a button that moves away from
+// it, as a capsule does when its unit comes in, keeps stepping.
+func held(c *ui.Context, b ui.Element) (int, bool) {
 	type hold struct {
-		start time.Time
-		steps int
+		down, fresh bool
+		start       time.Time
+		steps       int
 	}
 	h := ui.Local(b, "hold", func() hold { return hold{} })
-	if !b.Pressed() {
-		h.start = time.Time{}
-		return 0
+	b.HandleInput(func(ev ui.InputEvent) bool {
+		switch ev.Kind {
+		case ui.InputPointerDown:
+			h.down, h.fresh = true, true
+			return true
+		case ui.InputPointerUp:
+			h.down = false
+			return true
+		}
+		return false
+	})
+	if b.Clicked() {
+		return 1, false
 	}
 	now := c.Now()
+	if h.fresh {
+		h.fresh, h.start, h.steps = false, now, 0
+	}
 	if h.start.IsZero() {
-		*h = hold{start: now}
+		return 0, false
 	}
 	due := 1
-	if d := now.Sub(h.start); d > 400*time.Millisecond {
+	if d := now.Sub(h.start); h.down && d > 400*time.Millisecond {
 		due += int((d - 400*time.Millisecond) / (80 * time.Millisecond))
 	}
-	c.After(80 * time.Millisecond)
 	n := due - h.steps
 	h.steps = due
-	return n
+	if h.down {
+		c.After(80 * time.Millisecond)
+	} else {
+		h.start = time.Time{}
+	}
+	return n, h.down
 }
 
 // chip is a small rounded label tinted with a color, as for a membership
