@@ -91,7 +91,7 @@ func figure(c *ui.Context, s string) ui.Element {
 }
 
 // numberField is a whole number in a capsule between a minus and a plus,
-// its unit after it: typed into, or stepped, and on and on while a sign is
+// its unit after the capsule: typed into, or stepped, and on and on while a sign is
 // held, between lo and hi. Zero reads as none when that is given. It
 // reports a new value.
 func numberField(c *ui.Context, t *ui.Theme, p *palette, value *float64, lo, hi, step float64, unit, none, label string) bool {
@@ -107,33 +107,28 @@ func numberField(c *ui.Context, t *ui.Theme, p *palette, value *float64, lo, hi,
 		}
 		return strconv.FormatFloat(v, 'f', 0, 64)
 	}
-	row := ui.Row(c).Height(28).Radius(14).Padding(0, 2).AlignItems(ui.Center).Shrink(0).Background(p.Control)
-	text := ui.Local(row, "text", func() string { return format(*value) })
-	row.Children(func() {
-		sign := func(ic, name string, by float64) {
-			can := by < 0 && *value > lo || by > 0 && *value < hi
-			b := ui.ButtonBase(c).Label(name).Size(24, 24).Radius(12).Center().TextColor(t.Text).Disabled(!can)
-			if !can {
-				b.TextColor(t.TextMuted.Alpha(0.5))
-			} else if b.Pressed() {
-				b.Background(t.SurfacePressed)
-			} else if b.Hovered() {
-				b.Background(t.SurfaceHover)
+	var text *string
+	ui.Row(c).Gap(6).AlignItems(ui.Center).Shrink(0).Children(func() {
+		capsule := ui.Row(c).Height(28).Radius(14).Padding(0, 2).AlignItems(ui.Center).Background(p.Control)
+		text = ui.Local(capsule, "text", func() string { return format(*value) })
+		capsule.Children(func() {
+			sign := func(ic, name string, by float64) {
+				can := by < 0 && *value > lo || by > 0 && *value < hi
+				b := ui.ButtonBase(c).Label(name).Size(24, 24).Radius(12).Center().TextColor(t.Text).Disabled(!can)
+				if !can {
+					b.TextColor(t.TextMuted.Alpha(0.5))
+				} else if b.Pressed() {
+					b.Background(t.SurfacePressed)
+				} else if b.Hovered() {
+					b.Background(t.SurfaceHover)
+				}
+				b.Children(func() { ui.Icon(c, icon(ic)).FontSize(12) })
+				if n := held(c, b); can && n > 0 {
+					set(*value + by*float64(n))
+				}
 			}
-			b.Children(func() { ui.Icon(c, icon(ic)).FontSize(12) })
-			if n := held(c, b); can && n > 0 {
-				set(*value + by*float64(n))
-			}
-		}
-		sign("minus", "减少"+label, -step)
-		ui.Row(c).Width(68).Gap(3).AlignItems(ui.Center).Justify(ui.Center).Children(func() {
-			shown := unit != "" && (*value != 0 || none == "")
-			in := ui.TextInputBase(c, text).Label(label).Height(24).FontFeatures("tnum").SingleLine()
-			if shown {
-				in.Width(34).TextAlign(ui.End)
-			} else {
-				in.Width(56).TextAlign(ui.Center)
-			}
+			sign("minus", "减少"+label, -step)
+			in := ui.TextInputBase(c, text).Label(label).Width(48).Height(24).TextAlign(ui.Center).FontFeatures("tnum").SingleLine()
 			if in.Changed() {
 				if v, err := strconv.ParseFloat(strings.TrimSpace(*text), 64); err == nil && v >= lo && v <= hi {
 					set(v)
@@ -142,11 +137,15 @@ func numberField(c *ui.Context, t *ui.Theme, p *palette, value *float64, lo, hi,
 			if !in.Focused() {
 				*text = format(*value)
 			}
-			if shown {
-				ui.Text(c, unit).FontSize(12).TextColor(t.TextMuted).SingleLine()
-			}
+			sign("plus", "增加"+label, step)
 		})
-		sign("plus", "增加"+label, step)
+		// The unit has a place of its own width after every capsule, filled
+		// or not, so that the capsules of a page line up and hold still
+		// as a value turns to none.
+		u := ui.Text(c, unit).Width(30).FontSize(12).TextColor(t.TextMuted).SingleLine()
+		if *value == 0 && none != "" {
+			u.Opacity(0)
+		}
 	})
 	if changed {
 		*text = format(*value)
