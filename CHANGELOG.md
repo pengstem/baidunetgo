@@ -4,6 +4,18 @@
 
 <!-- 写在这里的内容会成为下一个版本的更新说明；留空则按提交记录自动生成。 -->
 
+## [0.5.0] - 2026-10-24
+
+### 改进
+
+- Have TestPathFolds find the widths where the path and the tools fold by bisection, since the font decides them and Linux CI's wider text broke the fixed 1500 and 1250 px checks, and check that the tools fold before the path does
+- Show the sharer's photo in a share's preview, not the account's: the share's page names the one signed in "photo" and the sharer "share_photo"
+- Open share links before saving them: one found on the clipboard opens by itself as the window comes forward (once per link, never the app's own), or with Cmd-V, showing who shared it, when, for how long and what it holds, its folders to go through with thumbnails, and a mark on each entry to save just those, asking for the password when the link came without one; shares are now read and saved through the web API instead of BaiduPCS-Go's flow
+- Fold a folder's tools before its path, however wide the window: they fold whenever the whole path would not fit beside them open and open again only when it still would, so the path no longer folds while the tools could give way nor grows back as the window narrows; and drop the summary under the path, which the status bar repeats, so the path lines up with the tools
+- Choose settings numbers from pop-ups of presets, as System Settings does, with the unit beside the setting's name so every control ends at the row's edge, in place of the stepper capsules; limits read 不限速 at zero, and the connection and file counts show only when chosen by hand, what auto-tuning chose being in the measurement's details
+- Drop the empty unit place after every number capsule, which left a blank strip at the end of each row: a unit shows after its capsule only where there is one and the value has it, and a held plus keeps stepping as the unit coming in moves the capsule, the press followed wherever the pointer goes
+- Put a setting's unit after its number capsule instead of inside it, in a place of one width after every capsule so that they line up and hold still as a limit turns to 不限
+
 ## [0.4.23] - 2026-10-24
 
 ### 改进
