@@ -43,7 +43,16 @@ func toolButton(c *ui.Context, t *ui.Theme, p *palette, ic, label string) ui.Ele
 // pill is a push button with an optional icon and a label: the main action
 // of a view filled with the accent color, a quiet one on the control gray.
 func pill(c *ui.Context, t *ui.Theme, p *palette, ic, label string, primary bool) ui.Element {
+	return pillOf(c, t, p, ic, label, primary, false)
+}
+
+// pillOf is pill, but folded to a round button of just its icon, as a
+// title bar's tools fold when it is narrow.
+func pillOf(c *ui.Context, t *ui.Theme, p *palette, ic, label string, primary, folded bool) ui.Element {
 	b := ui.ButtonBase(c).Label(label).Height(28).PaddingX(12).Radius(7).Gap(5).AlignItems(ui.Center)
+	if folded {
+		b.Width(28).PaddingX(0).Radius(14).Center().Tooltip(label)
+	}
 	if primary {
 		bg := t.Accent
 		if b.Pressed() {
@@ -68,7 +77,9 @@ func pill(c *ui.Context, t *ui.Theme, p *palette, ic, label string, primary bool
 		if ic != "" {
 			ui.Icon(c, icon(ic)).FontSize(13)
 		}
-		ui.Text(c, label).FontWeight(500).SingleLine()
+		if !folded {
+			ui.Text(c, label).FontWeight(500).SingleLine()
+		}
 	})
 	return b
 }
@@ -79,34 +90,94 @@ func figure(c *ui.Context, s string) ui.Element {
 	return ui.Text(c, s).FontFeatures("tnum").SingleLine()
 }
 
-// numberField is a short field of a whole number, its unit after it and a
-// stepper beside it, as AppKit's: typed, or stepped and held, between lo
-// and hi. It reports a new value.
-func numberField(c *ui.Context, t *ui.Theme, p *palette, value *float64, lo, hi, step float64, unit, label string) bool {
+// numberField is a whole number in a capsule between a minus and a plus,
+// its unit after it: typed into, or stepped, and on and on while a sign is
+// held, between lo and hi. Zero reads as none when that is given. It
+// reports a new value.
+func numberField(c *ui.Context, t *ui.Theme, p *palette, value *float64, lo, hi, step float64, unit, none, label string) bool {
 	changed := false
-	row := ui.Row(c).Gap(6).AlignItems(ui.Center).Shrink(0)
-	format := func(v float64) string { return strconv.FormatFloat(v, 'f', 0, 64) }
+	set := func(v float64) {
+		if v = max(lo, min(hi, v)); v != *value {
+			*value, changed = v, true
+		}
+	}
+	format := func(v float64) string {
+		if v == 0 && none != "" {
+			return none
+		}
+		return strconv.FormatFloat(v, 'f', 0, 64)
+	}
+	row := ui.Row(c).Height(28).Radius(14).Padding(0, 2).AlignItems(ui.Center).Shrink(0).Background(p.Control)
 	text := ui.Local(row, "text", func() string { return format(*value) })
 	row.Children(func() {
-		// No padding above or below: the input centers its line only in
-		// a box taller than it, and 24 less the theme's padding is not.
-		in := ui.TextInput(c, text).Label(label).Width(56).Height(24).Padding(0, 6).TextAlign(ui.Center).FontFeatures("tnum")
-		if in.Changed() {
-			if v, err := strconv.ParseFloat(strings.TrimSpace(*text), 64); err == nil && v >= lo && v <= hi && v != *value {
-				*value, changed = v, true
+		sign := func(ic, name string, by float64) {
+			can := by < 0 && *value > lo || by > 0 && *value < hi
+			b := ui.ButtonBase(c).Label(name).Size(24, 24).Radius(12).Center().TextColor(t.Text).Disabled(!can)
+			if !can {
+				b.TextColor(t.TextMuted.Alpha(0.5))
+			} else if b.Pressed() {
+				b.Background(t.SurfacePressed)
+			} else if b.Hovered() {
+				b.Background(t.SurfaceHover)
+			}
+			b.Children(func() { ui.Icon(c, icon(ic)).FontSize(12) })
+			if n := held(c, b); can && n > 0 {
+				set(*value + by*float64(n))
 			}
 		}
-		if !in.Focused() {
-			*text = format(*value)
-		}
-		if unit != "" {
-			ui.Text(c, unit).FontSize(12).TextColor(t.TextMuted)
-		}
-		if ui.Stepper(c, value, lo, hi, step).Label(label).Changed() {
-			*text, changed = format(*value), true
-		}
+		sign("minus", "减少"+label, -step)
+		ui.Row(c).Width(68).Gap(3).AlignItems(ui.Center).Justify(ui.Center).Children(func() {
+			shown := unit != "" && (*value != 0 || none == "")
+			in := ui.TextInputBase(c, text).Label(label).Height(24).FontFeatures("tnum").SingleLine()
+			if shown {
+				in.Width(34).TextAlign(ui.End)
+			} else {
+				in.Width(56).TextAlign(ui.Center)
+			}
+			if in.Changed() {
+				if v, err := strconv.ParseFloat(strings.TrimSpace(*text), 64); err == nil && v >= lo && v <= hi {
+					set(v)
+				}
+			}
+			if !in.Focused() {
+				*text = format(*value)
+			}
+			if shown {
+				ui.Text(c, unit).FontSize(12).TextColor(t.TextMuted).SingleLine()
+			}
+		})
+		sign("plus", "增加"+label, step)
 	})
+	if changed {
+		*text = format(*value)
+	}
 	return changed
+}
+
+// held is how many steps a stepping button owes this frame: one as it is
+// pressed and, held, more after a while and then faster, as AppKit's.
+func held(c *ui.Context, b ui.Element) int {
+	type hold struct {
+		start time.Time
+		steps int
+	}
+	h := ui.Local(b, "hold", func() hold { return hold{} })
+	if !b.Pressed() {
+		h.start = time.Time{}
+		return 0
+	}
+	now := c.Now()
+	if h.start.IsZero() {
+		*h = hold{start: now}
+	}
+	due := 1
+	if d := now.Sub(h.start); d > 400*time.Millisecond {
+		due += int((d - 400*time.Millisecond) / (80 * time.Millisecond))
+	}
+	c.After(80 * time.Millisecond)
+	n := due - h.steps
+	h.steps = due
+	return n
 }
 
 // chip is a small rounded label tinted with a color, as for a membership

@@ -56,7 +56,7 @@ func (a *App) settingsPage(c *ui.Context, t *ui.Theme, p *palette) {
 					mb = 50
 				}
 				settingRow(c, t, p, "内存预览上限", "更大的图片、文档会先下载再打开", func() {
-					if numberField(c, t, p, &mb, 10, 2000, 10, "MB", "内存预览上限（MB）") {
+					if numberField(c, t, p, &mb, 10, 2000, 10, "MB", "", "内存预览上限") {
 						s.PreviewMB = int(math.Round(mb))
 						a.applySettings()
 					}

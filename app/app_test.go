@@ -177,6 +177,43 @@ func TestSettingsPage(t *testing.T) {
 	save(t, tt, "settings-dark")
 }
 
+// TestSettingsNumbers steps a number with its plus, on and on while the
+// plus is held, and types one into it.
+func TestSettingsNumbers(t *testing.T) {
+	a, tt, _ := signedIn(t)
+	a.router.Push("/settings")
+	waitFor(t, tt, "下载位置")
+	tt.Advance(time.Second)
+	if err := tt.Click("增加下载限速"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Advance(100 * time.Millisecond)
+	if a.settings.DownLimit != 1 {
+		t.Errorf("download limit %d after a step, want 1", a.settings.DownLimit)
+	}
+
+	before := a.transferConfig().Threads
+	r, _ := tt.Find("增加每个文件的连接数")
+	tt.Press(r.X+r.W/2, r.Y+r.H/2)
+	for range 20 {
+		tt.Advance(50 * time.Millisecond)
+	}
+	tt.Release(r.X+r.W/2, r.Y+r.H/2)
+	tt.Advance(100 * time.Millisecond)
+	if got := a.transferConfig().Threads; got < before+5 || !a.settings.Manual {
+		t.Errorf("threads %d → %d held a second (manual %v), want several steps", before, got, a.settings.Manual)
+	}
+
+	r, _ = tt.Find("减少上传限速")
+	tt.ClickAt(r.X+r.W+30, r.Y+r.H/2)
+	tt.Key(ui.Cmd, ui.KeyA)
+	tt.Type("12")
+	tt.Advance(100 * time.Millisecond)
+	if a.settings.UpLimit != 12 {
+		t.Errorf("upload limit %d after typing 12", a.settings.UpLimit)
+	}
+}
+
 func TestTuneFromSettings(t *testing.T) {
 	old := tunePer
 	tunePer = 100 * time.Millisecond

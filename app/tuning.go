@@ -131,7 +131,7 @@ func (a *App) tuneSection(c *ui.Context, t *ui.Theme, p *palette) {
 			}
 		})
 		auto := !s.Manual
-		settingRow(c, t, p, "自动优化传输", "按实测选线路、连接数、块大小", func() {
+		settingRow(c, t, p, "自动优化传输", "", func() {
 			if ui.Switch(c, &auto).Label("自动优化传输").Changed() {
 				s.Manual = !auto
 				if !s.Manual {
@@ -145,55 +145,47 @@ func (a *App) tuneSection(c *ui.Context, t *ui.Theme, p *palette) {
 				}
 			}
 		})
-		if auto {
-			a.tuneResult(c, t, p, cfg)
-		}
+		// Shown either way: the host and block size stay measured when
+		// the counts are chosen by hand, and the rows under it hold still.
+		a.tuneResult(c, t, p, cfg)
 		manual := func() {
 			s.Manual = true
 			a.applySettings()
 		}
 		threads, parallel, upload := float64(cfg.Threads), float64(cfg.Parallel), float64(cfg.Upload)
-		chosen := "自动"
-		if !auto {
-			chosen = "手动"
-		}
-		threadsDetail := chosen
+		threadsDetail := ""
 		if !auto && a.vip() == 0 {
-			threadsDetail += " · 非会员建议 1–4"
+			threadsDetail = "非会员建议 1–4"
 		}
 		settingRow(c, t, p, "每个文件的连接数", threadsDetail, func() {
-			if numberField(c, t, p, &threads, 1, 64, 1, "", "每个文件的连接数") {
+			if numberField(c, t, p, &threads, 1, 64, 1, "", "", "每个文件的连接数") {
 				s.Threads, s.Parallel, s.Upload = int(threads), cfg.Parallel, cfg.Upload
 				manual()
 			}
 		})
-		settingRow(c, t, p, "同时传输的文件数", chosen, func() {
-			if numberField(c, t, p, &parallel, 1, 6, 1, "", "同时传输的文件数") {
+		settingRow(c, t, p, "同时传输的文件数", "", func() {
+			if numberField(c, t, p, &parallel, 1, 6, 1, "", "", "同时传输的文件数") {
 				s.Threads, s.Parallel, s.Upload = cfg.Threads, int(parallel), cfg.Upload
 				manual()
 			}
 		})
-		settingRow(c, t, p, "每个上传的连接数", chosen, func() {
-			if numberField(c, t, p, &upload, 1, 32, 1, "", "每个上传的连接数") {
+		settingRow(c, t, p, "每个上传的连接数", "", func() {
+			if numberField(c, t, p, &upload, 1, 32, 1, "", "", "每个上传的连接数") {
 				s.Threads, s.Parallel, s.Upload = cfg.Threads, cfg.Parallel, int(upload)
 				manual()
 			}
 		})
-		limit := func(name, what string, mbps *int) {
+		limit := func(name string, mbps *int) {
 			v := float64(*mbps)
-			detail := "不限速"
-			if *mbps > 0 {
-				detail = "所有" + what + "加起来最多 " + itoa(*mbps) + " MB/s"
-			}
-			settingRow(c, t, p, name, detail, func() {
-				if numberField(c, t, p, &v, 0, 1000, 1, "MB/s", name+"（MB/s，0 为不限）") {
+			settingRow(c, t, p, name, "", func() {
+				if numberField(c, t, p, &v, 0, 1000, 1, "MB/s", "不限", name) {
 					*mbps = int(v)
 					a.applySettings()
 				}
 			})
 		}
-		limit("下载限速", "下载", &s.DownLimit)
-		limit("上传限速", "上传", &s.UpLimit)
+		limit("下载限速", &s.DownLimit)
+		limit("上传限速", &s.UpLimit)
 	})
 }
 
