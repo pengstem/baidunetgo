@@ -3,7 +3,7 @@ module github.com/pengstem/baidunetgo
 go 1.27.2
 
 require (
-	github.com/egoist/mygo v0.6.2
+	github.com/egoist/mygo v0.6.3
 	github.com/klippa-app/go-pdfium v1.21.3
 	github.com/qjfoidnh/BaiduPCS-Go v0.0.0-20260909034501-1b9131817aaf
 	github.com/qjfoidnh/baidu-tools v1.2.0
@@ -37,6 +37,7 @@ require (
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.0 // indirect
 	golang.org/x/image v0.46.0 // indirect
+	golang.org/x/net v0.59.0 // indirect
 	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
