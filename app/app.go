@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/plugins/loading"
 	"github.com/egoist/mygo/ui"
 
 	"github.com/pengstem/baidunetgo/internal/auth"
@@ -208,10 +207,9 @@ func (a *App) View(c *ui.Context) {
 	t, p := applyTheme(c)
 	switch a.phase {
 	case phaseBooting:
-		ui.Column(c).Fill().Center().Background(t.Background).Children(func() {
-			// The one thing on the window: loading.dev's Pulse, in the accent.
-			loading.Pulse(c, loading.Options{Size: 32, Color: t.Accent}).Label("加载中")
-		})
+		// Reading the saved session takes a moment: show the bare window,
+		// not a wait, until the netdisk or the sign-in screen comes in.
+		ui.Box(c).Fill().Background(t.Background)
 	case phaseLogin:
 		a.loginView(c, t, p)
 	default:
