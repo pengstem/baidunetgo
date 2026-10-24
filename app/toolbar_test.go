@@ -88,45 +88,83 @@ func TestCompactToolbar(t *testing.T) {
 	}
 }
 
+// pathWide is a window the folder's path and tools both fit in, whatever
+// the font; pathNarrowest is the narrowest window the app allows (its
+// MinWidth in main.go), below which the title bar has no room to fold into.
+const (
+	pathWide      = 2000
+	pathNarrowest = 780
+)
+
 // TestPathFolds folds the folders above a deep folder with long names into
 // "…" in a narrow window, keeping the folder's own name, and goes to one
-// of them from its menu. The tools fold first, however wide the window,
-// and open again only when the path still shows whole beside them.
+// of them from its menu. The tools fold before the path does, and open
+// again only when the path shows whole beside them. Where each happens
+// depends on the font, so the test finds those widths rather than assuming
+// them.
 func TestPathFolds(t *testing.T) {
 	a, tt, srv := signedIn(t)
 	dir := "/数学建模美赛资料合集（2026版）/历年真题与优秀论文完整汇编/附录与评审标准说明文件夹"
 	srv.Add(fakepan.Node{Path: dir + "/说明.txt", Data: []byte("hi")})
 	a.router.Push(filesRoute(dir))
 	waitFor(t, tt, "说明.txt")
-	tt.SetSize(1500, 760)
-	tt.Advance(time.Second)
-	if _, ok := tt.Find("上层文件夹"); ok || a.compact {
-		t.Errorf("in a wide window the path folded (%v) or the tools did (%v)", ok, a.compact)
+
+	if folded, tools := foldAt(a, tt, pathWide); folded || tools {
+		t.Fatalf("at %d px the path folded (%v) or the tools did (%v)", pathWide, folded, tools)
 	}
 	save(t, tt, "path-wide")
-	tt.SetSize(1250, 760)
-	tt.Advance(time.Second)
-	if _, ok := tt.Find("上层文件夹"); ok || !a.compact {
-		t.Errorf("the path folded (%v) before the tools did (%v)", ok, a.compact)
+
+	// Both fold only as the window narrows, so the narrowest width at which
+	// the path shows whole, and the narrowest at which the tools stay open,
+	// are where a search finds them.
+	whole := firstWidth(pathNarrowest, pathWide, func(w int) bool {
+		folded, _ := foldAt(a, tt, w)
+		return !folded
+	})
+	open := firstWidth(pathNarrowest, pathWide, func(w int) bool {
+		_, tools := foldAt(a, tt, w)
+		return !tools
+	})
+	if whole > open {
+		t.Fatalf("at %d px the path folded before the tools did", whole-1)
 	}
-	save(t, tt, "path-tools-folded")
-	tt.SetSize(1500, 760)
+
+	// Just narrower than the path shows whole, the path and the tools have
+	// both folded.
+	narrow := whole - 1
+	if folded, tools := foldAt(a, tt, narrow); !folded || !tools {
+		t.Errorf("at %d px the path folded (%v) and the tools did (%v), want both", narrow, folded, tools)
+	}
+	save(t, tt, "path-narrow")
+
+	// Wide again, the folded tools open.
+	tt.SetSize(pathWide, 760)
 	tt.Advance(time.Second)
 	if a.compact {
-		t.Error("the tools stayed folded with room for them and the path")
+		t.Errorf("at %d px the tools stayed folded with room for them and the path", pathWide)
 	}
-	tt.SetSize(760, 600)
-	tt.Advance(time.Second)
-	save(t, tt, "path-narrow")
-	if !tt.HasText("附录与评审标准说明文件夹") {
+
+	// Where the tools open, the path shows whole beside them.
+	if folded, tools := foldAt(a, tt, open); folded || tools {
+		t.Errorf("at %d px the path folded (%v) or the tools did (%v)", open, folded, tools)
+	}
+
+	// At the narrowest width the path is folded, the folder's own name
+	// shows, and the "…" menu leads with the folder above it.
+	if folded, _ := foldAt(a, tt, pathNarrowest); !folded {
+		t.Fatalf("at %d px the path did not fold", pathNarrowest)
+	}
+	save(t, tt, "path-narrowest")
+	if !tt.HasText(path.Base(dir)) {
 		t.Errorf("the folder's name is gone; texts %q", tt.Texts())
 	}
 	if err := tt.Click("上层文件夹"); err != nil {
 		t.Fatal(err)
 	}
+	parent := path.Base(path.Dir(dir))
 	m := tt.Menu()
-	if len(m) == 0 || m[0] != "历年真题与优秀论文完整汇编" {
-		t.Fatalf("menu %q", m)
+	if len(m) == 0 || m[0] != parent {
+		t.Fatalf("menu %q, want %q first", m, parent)
 	}
 	if err := tt.ChooseMenuItem(m[0]); err != nil {
 		t.Fatal(err)
@@ -135,7 +173,30 @@ func TestPathFolds(t *testing.T) {
 	if want := path.Dir(dir); a.currentDir() != want {
 		t.Errorf("dir %q, want %q", a.currentDir(), want)
 	}
-	tt.SetSize(560, 600)
+}
+
+// foldAt sizes the window to w, after a wide one so that the folds are
+// those w alone gives, and reports whether the path folded and the tools
+// did.
+func foldAt(a *App, tt *ui.Tester, w int) (pathFolded, toolsFolded bool) {
+	tt.SetSize(pathWide, 760)
 	tt.Advance(time.Second)
-	save(t, tt, "path-narrower")
+	tt.SetSize(w, 760)
+	tt.Advance(time.Second)
+	_, ok := tt.Find("上层文件夹")
+	return ok, a.compact
+}
+
+// firstWidth returns the narrowest width in [lo, hi] at which ok holds, for
+// ok holding at hi and holding at every width above some width.
+func firstWidth(lo, hi int, ok func(w int) bool) int {
+	for lo < hi {
+		mid := (lo + hi) / 2
+		if ok(mid) {
+			hi = mid
+		} else {
+			lo = mid + 1
+		}
+	}
+	return lo
 }
