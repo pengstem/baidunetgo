@@ -4,6 +4,13 @@
 
 <!-- 写在这里的内容会成为下一个版本的更新说明；留空则按提交记录自动生成。 -->
 
+## [0.4.22] - 2026-10-24
+
+### 改进
+
+- Update MyGo to 0.6.3, whose hidden scroll bars no longer take a press meant for the row under them, whose Ctrl+V on Windows no longer pastes twice into a name being edited, and whose Metal glyph sampling no longer drops text pixels on older Radeon GPUs
+- Show the bare window while the saved session is read at start, in place of a loading animation that only flashed by
+
 ## [0.4.21] - 2026-10-23
 
 ### 改进
