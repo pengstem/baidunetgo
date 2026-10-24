@@ -3,6 +3,7 @@ package baidu_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -100,7 +101,7 @@ func TestOpenShare(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s.Owner != "旅行的猫" || s.Mine || s.Avatar == "" || s.Expires != 0 || len(s.Files) != 2 || !s.Files[0].IsDir || s.Files[1].Name != "旅行清单.txt" {
+	if s.Owner != "旅行的猫" || s.Mine || !strings.HasSuffix(s.Avatar, "/thumb?id=11") || s.Expires != 0 || len(s.Files) != 2 || !s.Files[0].IsDir || s.Files[1].Name != "旅行清单.txt" {
 		t.Fatalf("%+v", s)
 	}
 	in, err := c.SharedDir(ctx, s, s.Files[0].Path)

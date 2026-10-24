@@ -44,6 +44,10 @@ func TestLiveShare(t *testing.T) {
 	if len(s.Files) == 0 || s.Owner == "" {
 		t.Fatal("nothing shared, or no owner")
 	}
+	if u, err := c.User(ctx); err == nil && !s.Mine && s.Avatar == u.Avatar {
+		t.Errorf("the sharer's photo is the account's own: %s", s.Avatar)
+	}
+	t.Logf("photo %s", s.Avatar)
 	for _, f := range s.Files {
 		t.Logf("  %s dir=%v size=%d", f.Name, f.IsDir, f.Size)
 		if f.IsDir {

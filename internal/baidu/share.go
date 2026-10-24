@@ -239,7 +239,7 @@ func (c *Client) OpenShare(ctx context.Context, link, pwd string) (*Shared, erro
 
 var (
 	ownerRe = regexp.MustCompile(`"linkusername":"([^"]*)"`)
-	photoRe = regexp.MustCompile(`"photo":"([^"]*)"`)
+	photoRe = regexp.MustCompile(`"share_photo":"([^"]*)"`) // "photo" is who is signed in
 	selfRe  = regexp.MustCompile(`"self":(\d)`)
 )
 

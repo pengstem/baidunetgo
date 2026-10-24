@@ -261,7 +261,11 @@ func (s *Server) sharePage(w http.ResponseWriter, r *http.Request) {
 	if sh.mine {
 		owner, photo = "演示用户", s.URL+"/thumb?id=7"
 	}
-	page, _ := json.Marshal(map[string]any{"loginstate": 1, "linkusername": owner, "photo": photo, "self": b2i(sh.mine), "shareid": sh.id})
+	// As the netdisk's page, it tells who is signed in too.
+	page, _ := json.Marshal(map[string]any{
+		"loginstate": 1, "linkusername": owner, "share_photo": photo, "self": b2i(sh.mine), "shareid": sh.id,
+		"username": "演示用户", "photo": s.URL + "/thumb?id=7",
+	})
 	w.Write([]byte("<html><script>locals.mset(" + string(page) + ");</script></html>"))
 }
 
