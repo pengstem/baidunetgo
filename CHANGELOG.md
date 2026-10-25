@@ -4,6 +4,13 @@
 
 <!-- 写在这里的内容会成为下一个版本的更新说明；留空则按提交记录自动生成。 -->
 
+## [0.5.2] - 2026-10-25
+
+### 改进
+
+- Move to MyGo v0.6.4 (and Go 1.27.3, which it needs), and use what it adds: back and forward, which now come from a touchpad's swipes between pages as well as a mouse's side buttons, step through pictures in the preview as Left and Right do, and the PDF viewer's Cmd-and-scroll zoom ignores a fling's momentum, so pressing Cmd as a scroll coasts no longer zooms by what is left of it
+- Bring the course materials up to v0.5.1 for the 10-26 project plan report: add 0-项目规划书, update the requirements, design and management docs to the share links, retries, rename and 21,460 lines now in the code, write the AI notes' prompt statistics and two more cases, rewrite the talk script for the 5-minute deck, and put Word copies of all six under docs/course/word for handing in
+
 ## [0.5.1] - 2026-10-25
 
 ### 改进
