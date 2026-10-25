@@ -84,8 +84,22 @@ func (d *Doc) page(i int) requests.Page {
 	return requests.Page{ByIndex: &requests.PageByIndex{Document: d.doc, Index: i}}
 }
 
+// Part is a part of a page, in fractions of its width and height from
+// its top left.
+type Part struct{ X, Y, W, H float64 }
+
+// Whole is the whole page.
+var Whole = Part{W: 1, H: 1}
+
 // Render draws page i (from 0) width pixels wide.
 func (d *Doc) Render(i, width int) (*image.RGBA, error) {
+	return d.RenderPart(i, Whole, width)
+}
+
+// RenderPart draws part of page i (from 0) at the scale that draws the
+// whole page width pixels wide, so that a page zoomed in further than it
+// could be drawn whole is drawn sharp where it shows.
+func (d *Doc) RenderPart(i int, part Part, width int) (*image.RGBA, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if d.inst == nil {
@@ -95,8 +109,15 @@ func (d *Doc) Render(i, width int) (*image.RGBA, error) {
 		return nil, errors.New("pdf: no such page")
 	}
 	pg := d.Pages[i]
-	height := int(float64(width) * pg.Height / pg.Width)
-	r, err := d.inst.RenderPageInPixels(&requests.RenderPageInPixels{Page: d.page(i), Width: width, Height: height})
+	req := &requests.RenderPageInPixels{
+		Page:   d.page(i),
+		Width:  max(1, int(float64(width)*part.W)),
+		Height: max(1, int(float64(width)*pg.Height/pg.Width*part.H)),
+	}
+	if part != Whole {
+		req.Crop = &requests.RenderPageCrop{X: part.X * pg.Width, Y: part.Y * pg.Height, Width: part.W * pg.Width, Height: part.H * pg.Height}
+	}
+	r, err := d.inst.RenderPageInPixels(req)
 	if err != nil {
 		return nil, err
 	}

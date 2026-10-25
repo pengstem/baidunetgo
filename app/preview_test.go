@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"image"
 	"image/png"
+	"math"
 	"os"
 	"strings"
 	"testing"
@@ -73,7 +74,7 @@ func TestPreviewMarkdownAndPDF(t *testing.T) {
 	save(t, tt, "preview-md")
 	a.open(fileNamed(t, a, "/文档", "年度报告.pdf"))
 	deadline := time.Now().Add(20 * time.Second)
-	for a.pv.doc == nil || a.pv.pages[0] == nil {
+	for a.pv.doc == nil || a.pv.pages[0].bmp == nil {
 		if a.pv.err != "" || time.Now().After(deadline) {
 			t.Fatalf("pdf did not render: %q", a.pv.err)
 		}
@@ -85,6 +86,108 @@ func TestPreviewMarkdownAndPDF(t *testing.T) {
 	if len(a.pv.doc.Pages) != 4 {
 		t.Errorf("pages %d", len(a.pv.doc.Pages))
 	}
+}
+
+func TestPreviewPDFZoom(t *testing.T) {
+	a, tt, _ := signedIn(t)
+	a.router.Push(filesRoute("/文档"))
+	waitFor(t, tt, "年度报告.pdf")
+	a.open(fileNamed(t, a, "/文档", "年度报告.pdf"))
+	settle := func(what string, done func() bool) {
+		t.Helper()
+		deadline := time.Now().Add(20 * time.Second)
+		for !done() {
+			if a.pv.err != "" || time.Now().After(deadline) {
+				t.Fatalf("%s: %q", what, a.pv.err)
+			}
+			time.Sleep(20 * time.Millisecond)
+			tt.Advance(50 * time.Millisecond)
+		}
+	}
+	settle("pdf did not render", func() bool { return a.pv.doc != nil && a.pv.pages[0].bmp != nil })
+	tt.Advance(time.Second)
+	pv := a.pv
+	if pv.pages[0].width != int(pv.pdfBase*2) {
+		t.Errorf("drawn %d wide, fits %v", pv.pages[0].width, pv.pdfBase)
+	}
+
+	// The buttons and the keys zoom, about the middle of the view.
+	if err := tt.Click("放大"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Advance(100 * time.Millisecond)
+	if pv.zoom != 1.5 {
+		t.Errorf("放大 zoomed to %v", pv.zoom)
+	}
+	tt.Key(ui.Cmd, ui.Key0)
+	tt.Advance(100 * time.Millisecond)
+	if pv.zoom != 1 || pv.pdfScroll.X != 0 {
+		t.Errorf("Cmd0: zoom %v, scrolled %v", pv.zoom, pv.pdfScroll.X)
+	}
+	tt.Key(ui.Cmd, ui.KeyEqual)
+	tt.Advance(100 * time.Millisecond)
+	if pv.zoom != 1.5 {
+		t.Errorf("Cmd= zoomed to %v", pv.zoom)
+	}
+	tt.Key(ui.Cmd, ui.KeyMinus)
+	tt.Advance(100 * time.Millisecond)
+	if pv.zoom != 1 {
+		t.Errorf("Cmd- zoomed to %v", pv.zoom)
+	}
+
+	// A pinch keeps the point under it where it is on its page.
+	v := pv.view
+	x, y := v.W/2+150, v.H/2
+	where := func() (int, float32, float32) {
+		l := pv.pdfLayout()
+		cx, cy := pv.pdfScroll.X+x, pv.pdfScroll.Y+y
+		i := l.pageAt(cy)
+		return i, (cx - l.left()) / l.w, (cy - l.tops[i]) / l.heights[i]
+	}
+	i0, fx0, fy0 := where()
+	tt.Pinch(v.X+x, v.Y+y, 3)
+	tt.Advance(100 * time.Millisecond)
+	i1, fx1, fy1 := where()
+	if pv.zoom != 3 || i1 != i0 || abs(fx1-fx0) > 0.002 || abs(fy1-fy0) > 0.002 {
+		t.Errorf("pinch: zoom %v, page %d at %v,%v, was %d at %v,%v", pv.zoom, i1, fx1, fy1, i0, fx0, fy0)
+	}
+
+	// Zoomed past what a page is drawn whole with, the part in view is
+	// drawn sharp over it, and the whole page no larger.
+	pp := &pv.pages[i0]
+	settle("no part drawn", func() bool { return pp.part != nil && !pp.drawing })
+	pg := pv.doc.Pages[i0]
+	if max := int(math.Sqrt(pdfPixels * pg.Width / pg.Height)); pp.width > max {
+		t.Errorf("whole page drawn %d wide, past %d", pp.width, max)
+	}
+	if want := int(pv.pdfLayout().w * 2); pp.partWidth != want {
+		t.Errorf("part drawn at %d wide, wants %d", pp.partWidth, want)
+	}
+	if pp.partOf.W >= 1 || pp.partOf.H >= 1 {
+		t.Errorf("part %+v is the whole page", pp.partOf)
+	}
+	save(t, tt, "preview-pdf-zoom")
+
+	// Fitting it again lets the part go.
+	tt.Key(ui.Cmd, ui.Key0)
+	tt.Advance(100 * time.Millisecond)
+	if pv.zoom != 1 || pv.pages[i0].part != nil {
+		t.Errorf("Cmd0: zoom %v, part %v", pv.zoom, pv.pages[i0].part != nil)
+	}
+
+	// The wheel alone scrolls the pages, rather than zoom them.
+	tt.Wheel(v.X+x, v.Y+y, 0, 200)
+	tt.Advance(500 * time.Millisecond)
+	if pv.zoom != 1 || pv.pdfScroll.Y == 0 {
+		t.Errorf("wheel: zoom %v, scrolled %v", pv.zoom, pv.pdfScroll.Y)
+	}
+}
+
+func abs(f float32) float32 {
+	if f < 0 {
+		return -f
+	}
+	return f
 }
 
 func TestPreviewImage(t *testing.T) {

@@ -61,9 +61,9 @@ type previewState struct {
 	source   bool // show a Markdown file's source
 
 	doc       *pdf.Doc
-	pages     []*ui.Bitmap
-	rendering map[int]bool
-	pageList  ui.ListState
+	pages     []pdfPage
+	pdfBase   float32 // how wide the pages fit the window
+	pdfScroll ui.ScrollState
 
 	player *audio.Player
 	stream *remote.File
@@ -202,8 +202,7 @@ func (a *App) loadPreview(pv *previewState) {
 					return
 				}
 				pv.doc = doc
-				pv.pages = make([]*ui.Bitmap, len(doc.Pages))
-				pv.rendering = map[int]bool{}
+				pv.pages = make([]pdfPage, len(doc.Pages))
 			})
 		default:
 			text := decodeText(data)
@@ -343,19 +342,19 @@ func (a *App) previewOverlay(c *ui.Context, t *ui.Theme, p *palette) {
 				if root.OverlayShortcut(0, ui.KeyRight) {
 					a.step(1)
 				}
-				if pv.bmp != nil {
-					if root.OverlayShortcut(ui.Cmd, ui.KeyC) {
-						a.copyImage(pv.file, pv.data)
-					}
-					if root.OverlayShortcut(ui.Cmd, ui.KeyEqual) {
-						pv.zoomBy(1.5)
-					}
-					if root.OverlayShortcut(ui.Cmd, ui.KeyMinus) {
-						pv.zoomBy(1 / 1.5)
-					}
-					if root.OverlayShortcut(ui.Cmd, ui.Key0) {
-						pv.zoomBy(0)
-					}
+				if pv.bmp != nil && root.OverlayShortcut(ui.Cmd, ui.KeyC) {
+					a.copyImage(pv.file, pv.data)
+				}
+			}
+			if pv.zoomable() {
+				if root.OverlayShortcut(ui.Cmd, ui.KeyEqual) {
+					pv.zoomStep(1.5)
+				}
+				if root.OverlayShortcut(ui.Cmd, ui.KeyMinus) {
+					pv.zoomStep(1 / 1.5)
+				}
+				if root.OverlayShortcut(ui.Cmd, ui.Key0) {
+					pv.zoomStep(0)
 				}
 			}
 		})
@@ -382,8 +381,7 @@ func (a *App) previewBar(c *ui.Context, t *ui.Theme, p *palette, pv *previewStat
 			ui.Text(c, pv.file.Name).FontWeight(500).SingleLine()
 			meta := lk.label + " · " + humanSize(pv.file.Size)
 			if pv.doc != nil {
-				first, _ := pv.pageList.Visible()
-				meta += " · 第 " + itoa(first+1) + " / " + itoa(len(pv.doc.Pages)) + " 页"
+				meta += " · 第 " + itoa(pv.pdfShown()+1) + " / " + itoa(len(pv.doc.Pages)) + " 页"
 			}
 			if pv.bmp != nil {
 				w, h := pv.bmp.Size()
@@ -395,15 +393,17 @@ func (a *App) previewBar(c *ui.Context, t *ui.Theme, p *palette, pv *previewStat
 			ui.Text(c, meta).FontSize(t.Rem(0.82)).TextColor(white.Alpha(0.6)).SingleLine()
 		})
 		ui.Spacer(c)
-		if pv.kind == kindImage && pv.bmp != nil {
+		if pv.zoomable() {
 			if glassButton(c, "zoom-out", "缩小").Clicked() {
-				pv.zoomBy(1 / 1.5)
+				pv.zoomStep(1 / 1.5)
 			}
 			ui.Text(c, itoa(int(pv.zoom*100+0.5))+"%").Width(48).TextAlign(ui.Center).FontFeatures("tnum").
 				TextColor(white.Alpha(0.75)).ContentTransition(ui.ContentTransition{Numeric: true})
 			if glassButton(c, "zoom-in", "放大").Clicked() {
-				pv.zoomBy(1.5)
+				pv.zoomStep(1.5)
 			}
+		}
+		if pv.kind == kindImage && pv.bmp != nil {
 			if glassButton(c, "copy", "复制图片").Clicked() {
 				a.copyImage(pv.file, pv.data)
 			}
@@ -437,6 +437,11 @@ func (a *App) previewBar(c *ui.Context, t *ui.Theme, p *palette, pv *previewStat
 			a.closePreview()
 		}
 	})
+}
+
+// zoomable reports whether the preview zooms: a picture, or a PDF.
+func (pv *previewState) zoomable() bool {
+	return pv.kind == kindImage && pv.bmp != nil || pv.doc != nil
 }
 
 // zoomBy zooms the picture by f, within 1 to 8 times; 0 fits it to the
@@ -685,49 +690,247 @@ func (a *App) textViewer(c *ui.Context, t *ui.Theme, p *palette, pv *previewStat
 	})
 }
 
-// pdfViewer shows the pages of a PDF, rendering each as it scrolls into
-// view.
+// The pages of a PDF, as the viewer lays them out.
+const (
+	pdfTop    = 4
+	pdfGap    = 18
+	pdfBottom = 40
+	pdfSide   = 24 // beside pages wider than the view
+	// pdfPixels is the most pixels a page is drawn whole with: zoomed in
+	// further, the part of it in view is drawn sharp over it.
+	pdfPixels = 8 << 20
+	// pdfAround is how far around the view, in views, a part is drawn, so
+	// that scrolling a little does not draw it again.
+	pdfAround = 0.25
+)
+
+// pdfPage is what is drawn of a page of the PDF.
+type pdfPage struct {
+	bmp     *ui.Bitmap
+	width   int // how many pixels wide bmp draws the page
+	drawing bool
+
+	part        *ui.Bitmap
+	partOf      pdf.Part // where part is on the page
+	partWidth   int      // how many pixels wide part draws the whole page
+	drawingPart bool
+}
+
+// pdfLayout is where the pages of a PDF go, each w wide, centered in
+// content contentW wide.
+type pdfLayout struct {
+	w, contentW, contentH float32
+	tops, heights         []float32
+}
+
+func layoutPDF(pages []pdf.Page, base, zoom, viewW float32) pdfLayout {
+	l := pdfLayout{w: base * zoom}
+	l.contentW = max(viewW, l.w+2*pdfSide)
+	y := float32(pdfTop)
+	for _, pg := range pages {
+		h := l.w * float32(pg.Height/pg.Width)
+		l.tops = append(l.tops, y)
+		l.heights = append(l.heights, h)
+		y += h + pdfGap
+	}
+	l.contentH = y - pdfGap + pdfBottom
+	return l
+}
+
+func (l *pdfLayout) left() float32 { return (l.contentW - l.w) / 2 }
+
+// pageAt returns the page at y in the content: the one above, between
+// pages.
+func (l *pdfLayout) pageAt(y float32) int {
+	i := 0
+	for i+1 < len(l.tops) && l.tops[i+1] <= y {
+		i++
+	}
+	return i
+}
+
+func (pv *previewState) pdfLayout() pdfLayout {
+	return layoutPDF(pv.doc.Pages, pv.pdfBase, pv.zoom, pv.view.W)
+}
+
+// zoomPDF zooms the pages by f, within 1 to 8 times, 0 fitting them to
+// the window again, keeping the point at (x, y) in the view where it is.
+func (pv *previewState) zoomPDF(f, x, y float32) {
+	was := pv.pdfLayout()
+	old := pv.zoom
+	pv.zoomBy(f)
+	if pv.zoom == old || was.w == 0 {
+		return
+	}
+	now := pv.pdfLayout()
+	s := &pv.pdfScroll
+	cx, cy := s.X+x, s.Y+y
+	i := was.pageAt(cy)
+	fx, fy := (cx-was.left())/was.w, (cy-was.tops[i])/was.heights[i]
+	s.X = clamp(now.left()+fx*now.w-x, 0, max(0, now.contentW-pv.view.W))
+	s.Y = clamp(now.tops[i]+fy*now.heights[i]-y, 0, max(0, now.contentH-pv.view.H))
+}
+
+// zoomStep zooms by f, as the buttons, the keys and the menu do: a PDF
+// about the middle of the view.
+func (pv *previewState) zoomStep(f float32) {
+	if pv.doc != nil {
+		pv.zoomPDF(f, pv.view.W/2, pv.view.H/2)
+		return
+	}
+	pv.zoomBy(f)
+}
+
+// pdfShown returns the first page in view.
+func (pv *previewState) pdfShown() int {
+	l := pv.pdfLayout()
+	i := l.pageAt(pv.pdfScroll.Y)
+	if i+1 < len(l.tops) && l.tops[i]+l.heights[i] <= pv.pdfScroll.Y {
+		i++ // the gap below it is at the top
+	}
+	return i
+}
+
+// pdfViewer shows the pages of a PDF, drawing those in view, zoomed with a
+// pinch, Cmd and the wheel, the buttons and the keys.
 func (a *App) pdfViewer(c *ui.Context, t *ui.Theme, p *palette, pv *previewState) {
-	ww, _ := c.Size()
-	pageW := min(ww-120, 900)
-	pixels := int(pageW * 2)
-	list := ui.List(c, &pv.pageList, len(pv.pages)).Fill().Gap(18).Padding(4, 0, 40)
-	list.Rows(func(row ui.ListRow) {
-		c := row.Context
-		i := row.Index
-		pg := pv.doc.Pages[i]
-		h := pageW * float32(pg.Height/pg.Width)
-		ui.Row(c).Justify(ui.Center).Children(func() {
-			page := ui.Box(c).Size(pageW, h).Radius(4).Background(ui.Hex("#ffffff")).Center().
-				Shadow(0, 12, 40, -12, ui.RGBA(0, 0, 0, 0.5))
-			page.Children(func() {
-				if bmp := pv.pages[i]; bmp != nil {
-					ui.Image(c, bmp).Fill().Fit(ui.Contain).Transition(ui.ElementTransition{Enter: &ui.Motion{Opacity: 0}, Animation: &motionHover})
-				} else {
-					ui.Spinner(c).Label("渲染中")
-					a.renderPage(pv, i, pixels)
+	ww, wh := c.Size()
+	pv.pdfBase = min(ww-120, 900)
+	sc := ui.ScrollBoth(c).Fill().TrackScroll(&pv.pdfScroll)
+	pv.view = sc.Bounds()
+	if pv.view.W <= 0 {
+		// Not laid out yet: as the body around it will be.
+		pv.view = ui.Rect{W: ww - 48, H: wh - titleBarMin - 8 - 24}
+	}
+	sc.HandleInput(func(ev ui.InputEvent) bool {
+		switch {
+		case ev.Kind == ui.InputZoom:
+			pv.zoomPDF(ev.Scale, ev.X, ev.Y)
+		case ev.Kind == ui.InputScroll && ev.Mods&ui.Cmd != 0:
+			pv.zoomPDF(float32(math.Pow(1.0015, float64(-ev.DY))), ev.X, ev.Y)
+		default:
+			return false
+		}
+		return true
+	})
+	l := pv.pdfLayout()
+	s, vh := pv.pdfScroll, pv.view.H
+	sc.Children(func() {
+		ui.Box(c).Size(l.contentW, l.contentH).Children(func() {
+			for i := range pv.pages {
+				top, h := l.tops[i], l.heights[i]
+				switch {
+				case top+h < s.Y-vh/2 || top > s.Y+vh*1.5:
+					// Out of view: kept a while, for scrolling back.
+					if top+h < s.Y-4*vh || top > s.Y+5*vh {
+						pv.pages[i] = pdfPage{drawing: pv.pages[i].drawing, drawingPart: pv.pages[i].drawingPart}
+					}
+					pv.pages[i].part = nil
+					continue
 				}
-			})
+				a.pdfPage(c.Key(i), pv, &l, i)
+			}
 		})
 	})
 }
 
-// renderPage renders a page of the PDF on a goroutine.
-func (a *App) renderPage(pv *previewState, i, pixels int) {
-	if pv.rendering[i] {
-		return
+// pdfPage shows page i, drawing it as sharp as it shows.
+func (a *App) pdfPage(c *ui.Context, pv *previewState, l *pdfLayout, i int) {
+	pp := &pv.pages[i]
+	pg := pv.doc.Pages[i]
+	top, h := l.tops[i], l.heights[i]
+	want := int(l.w * 2)
+	whole := int(math.Sqrt(pdfPixels * pg.Width / pg.Height))
+	if fw := min(want, whole); !pp.drawing && (pp.bmp == nil || pp.width < fw*9/10 || pp.width > fw*2) {
+		a.drawPage(pv, i, fw)
 	}
-	pv.rendering[i] = true
-	doc := pv.doc
-	go func() {
-		img, err := doc.Render(i, pixels)
-		if err != nil {
+	if want <= whole*21/20 {
+		pp.part = nil
+	} else if !pp.drawingPart {
+		// The part of the page in view, in fractions of it.
+		s := pv.pdfScroll
+		x0, x1 := (s.X-l.left())/l.w, (s.X+pv.view.W-l.left())/l.w
+		y0, y1 := (s.Y-top)/h, (s.Y+pv.view.H-top)/h
+		in := pdf.Part{X: float64(max(x0, 0)), Y: float64(max(y0, 0))}
+		in.W, in.H = float64(min(x1, 1))-in.X, float64(min(y1, 1))-in.Y
+		if in.W > 0 && in.H > 0 && (pp.part == nil || pp.partWidth != want || !covers(pp.partOf, in)) {
+			ax, ay := pdfAround*pv.view.W/l.w, pdfAround*pv.view.H/h
+			a.drawPart(pv, i, pixelPart(clamp(x0-ax, 0, 1), clamp(y0-ay, 0, 1), clamp(x1+ax, 0, 1), clamp(y1+ay, 0, 1), want, int(float64(want)*pg.Height/pg.Width)), want)
+		}
+	}
+	page := ui.Box(c).Absolute().Top(top).Left(l.left()).Size(l.w, h).Radius(4).Background(ui.Hex("#ffffff")).Center().
+		Shadow(0, 12, 40, -12, ui.RGBA(0, 0, 0, 0.5))
+	page.Children(func() {
+		if pp.bmp == nil {
+			ui.Spinner(c).Label("渲染中")
 			return
 		}
-		bmp := ui.NewBitmap(img)
+		ui.Image(c, pp.bmp).Fill().Fit(ui.FillBox).Transition(ui.ElementTransition{Enter: &ui.Motion{Opacity: 0}, Animation: &motionHover})
+		if pp.part != nil {
+			r := pp.partOf
+			ui.Image(c, pp.part).Absolute().Left(float32(r.X)*l.w).Top(float32(r.Y)*h).Size(float32(r.W)*l.w, float32(r.H)*h).Fit(ui.FillBox)
+		}
+	})
+}
+
+// pixelPart returns the part of a page from (x0, y0) to (x1, y1), in
+// fractions of it, out to the whole pixels of the page drawn w by h, so
+// that it lines up with them.
+func pixelPart(x0, y0, x1, y1 float32, w, h int) pdf.Part {
+	fw, fh := float64(w), float64(h)
+	l, t := math.Floor(float64(x0)*fw), math.Floor(float64(y0)*fh)
+	r, b := math.Ceil(float64(x1)*fw), math.Ceil(float64(y1)*fh)
+	return pdf.Part{X: l / fw, Y: t / fh, W: (r - l) / fw, H: (b - t) / fh}
+}
+
+// covers reports whether part a holds all of part b.
+func covers(a, b pdf.Part) bool {
+	const e = 1e-6
+	return a.X <= b.X+e && a.Y <= b.Y+e && a.X+a.W >= b.X+b.W-e && a.Y+a.H >= b.Y+b.H-e
+}
+
+// drawPage draws page i width pixels wide on a goroutine.
+func (a *App) drawPage(pv *previewState, i, width int) {
+	pv.pages[i].drawing = true
+	doc := pv.doc
+	go func() {
+		img, err := doc.Render(i, width)
+		var bmp *ui.Bitmap
+		if err == nil {
+			bmp = ui.NewBitmap(img)
+		}
 		a.update(func() {
-			if a.pv == pv {
-				pv.pages[i] = bmp
+			if a.pv != pv {
+				return
+			}
+			pp := &pv.pages[i]
+			pp.drawing = false
+			if bmp != nil {
+				pp.bmp, pp.width = bmp, width
+			}
+		})
+	}()
+}
+
+// drawPart draws part of page i, at the scale that draws it width pixels
+// wide, on a goroutine.
+func (a *App) drawPart(pv *previewState, i int, part pdf.Part, width int) {
+	pv.pages[i].drawingPart = true
+	doc := pv.doc
+	go func() {
+		img, err := doc.RenderPart(i, part, width)
+		var bmp *ui.Bitmap
+		if err == nil {
+			bmp = ui.NewBitmap(img)
+		}
+		a.update(func() {
+			if a.pv != pv {
+				return
+			}
+			pp := &pv.pages[i]
+			pp.drawingPart = false
+			if bmp != nil {
+				pp.part, pp.partOf, pp.partWidth = bmp, part, width
 			}
 		})
 	}()
