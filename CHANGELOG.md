@@ -4,6 +4,12 @@
 
 <!-- 写在这里的内容会成为下一个版本的更新说明；留空则按提交记录自动生成。 -->
 
+## [0.5.1] - 2026-10-25
+
+### 改进
+
+- Zoom PDF previews as pictures zoom, with a pinch, Cmd and the wheel, Cmd +/-/0 and the title bar's buttons, keeping the point under the pointer where it is on its page, and draw them sharp as they grow: each page is drawn again at the new size up to 8 million pixels, and past that the part in view is drawn over it at full sharpness, so memory stays bounded at any zoom
+
 ## [0.5.0] - 2026-10-24
 
 ### 改进
