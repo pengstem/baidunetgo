@@ -336,10 +336,13 @@ func (a *App) previewOverlay(c *ui.Context, t *ui.Theme, p *palette) {
 				a.closePreview()
 			}
 			if pv.kind == kindImage {
-				if root.OverlayShortcut(0, ui.KeyLeft) {
+				// Back and forward too: a touchpad's swipes between pages
+				// and a mouse's side buttons, which the router under the
+				// overlay never gets.
+				if root.OverlayShortcut(0, ui.KeyLeft) || root.OverlayShortcut(0, ui.KeyBack) {
 					a.step(-1)
 				}
-				if root.OverlayShortcut(0, ui.KeyRight) {
+				if root.OverlayShortcut(0, ui.KeyRight) || root.OverlayShortcut(0, ui.KeyForward) {
 					a.step(1)
 				}
 				if pv.bmp != nil && root.OverlayShortcut(ui.Cmd, ui.KeyC) {
@@ -806,7 +809,9 @@ func (a *App) pdfViewer(c *ui.Context, t *ui.Theme, p *palette, pv *previewState
 		switch {
 		case ev.Kind == ui.InputZoom:
 			pv.zoomPDF(ev.Scale, ev.X, ev.Y)
-		case ev.Kind == ui.InputScroll && ev.Mods&ui.Cmd != 0:
+		case ev.Kind == ui.InputScroll && ev.Mods&ui.Cmd != 0 && !ev.Momentum:
+			// A fling's momentum scrolls on with Cmd pressed after it,
+			// rather than zooming by what is left of it.
 			pv.zoomPDF(float32(math.Pow(1.0015, float64(-ev.DY))), ev.X, ev.Y)
 		default:
 			return false

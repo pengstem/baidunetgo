@@ -214,6 +214,17 @@ func TestPreviewImage(t *testing.T) {
 	if a.pv.file.Name != "IMG_2313.jpg" {
 		t.Errorf("Right went to %s", a.pv.file.Name)
 	}
+	// A swipe between pages, or a mouse's side button.
+	tt.Key(0, ui.KeyForward)
+	tt.Advance(100 * time.Millisecond)
+	if a.pv.file.Name != "IMG_2314.jpg" {
+		t.Errorf("Forward went to %s", a.pv.file.Name)
+	}
+	tt.Key(0, ui.KeyBack)
+	tt.Advance(100 * time.Millisecond)
+	if a.pv.file.Name != "IMG_2313.jpg" || a.router.Path() != "/files/照片" {
+		t.Errorf("Back went to %s in %s", a.pv.file.Name, a.router.Path())
+	}
 }
 
 // clipboardPicture waits for a picture on the clipboard and decodes it.
