@@ -167,7 +167,7 @@ func (a *App) fileList(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 			if a.renamingIn(l, f) {
 				a.nameField(c, t, l, f, false)
 			} else {
-				a.clickName(l, f, ui.Text(c, f.Name).Grow(1).Shrink(1).SingleLine())
+				a.clickName(l, f, wholeOnHover(c, ui.Text(c, f.Name).Grow(1).Shrink(1).SingleLine(), f.Name, 0))
 			}
 			size := "—"
 			if !f.IsDir {
@@ -315,7 +315,12 @@ func (a *App) fileGrid(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 			if a.renamingIn(l, f) {
 				ui.Row(c).Width(tileNameWidth).Children(func() { a.nameField(c, t, l, f, true) })
 			} else {
-				a.clickName(l, f, ui.Text(c, a.tileName(c, f.Name)).NoWrap().TextAlign(ui.Center).LineHeight(1.25))
+				shown := a.tileName(c, f.Name)
+				name := ui.Text(c, shown).NoWrap().TextAlign(ui.Center).LineHeight(1.25)
+				if strings.Count(shown, "…") > strings.Count(f.Name, "…") {
+					name.Tooltip(f.Name) // its middle cut out
+				}
+				a.clickName(l, f, name)
 			}
 		})
 		if !passing {

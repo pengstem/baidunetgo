@@ -419,7 +419,7 @@ func (a *App) sharedRow(c *ui.Context, t *ui.Theme, p *palette, f baidu.File, i 
 		}
 		a.fileIcon(c, t, p, &f, 26)
 		ui.Column(c).Grow(1).Shrink(1).Gap(1).Children(func() {
-			ui.Text(c, f.Name).SingleLine()
+			wholeOnHover(c, ui.Text(c, f.Name).SingleLine(), f.Name, 0)
 			detail := humanSize(f.Size)
 			if f.IsDir {
 				detail = "文件夹"

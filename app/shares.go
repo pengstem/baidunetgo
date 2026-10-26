@@ -194,7 +194,7 @@ func (a *App) sharesPage(c *ui.Context, t *ui.Theme, p *palette) {
 						if len(it.FsIDs) > 1 {
 							name += " 等 " + itoa(len(it.FsIDs)) + " 项"
 						}
-						ui.Text(c, name).SingleLine()
+						wholeOnHover(c, ui.Text(c, name).SingleLine(), name, 0)
 						figure(c, strings.TrimPrefix(it.Link, "https://")+" · "+itoa(it.Views)+" 次浏览").
 							FontSize(11).TextColor(t.TextMuted)
 					})

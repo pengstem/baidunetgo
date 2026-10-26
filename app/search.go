@@ -100,8 +100,8 @@ func (a *App) searchPage(c *ui.Context, t *ui.Theme, p *palette, q string) {
 				row.Children(func() {
 					a.fileIcon(c, t, p, &f, 28)
 					ui.Column(c).Grow(1).Shrink(1).Gap(1).Children(func() {
-						ui.RichText(c, highlight(f.Name, q, t)...).SingleLine()
-						ui.Text(c, path.Dir(f.Path)).FontSize(11).TextColor(t.TextMuted).SingleLine()
+						wholeOnHover(c, ui.RichText(c, highlight(f.Name, q, t)...).SingleLine(), f.Name, 0)
+						wholeOnHover(c, ui.Text(c, path.Dir(f.Path)).FontSize(11).TextColor(t.TextMuted).SingleLine(), path.Dir(f.Path), 11)
 					})
 					if !f.IsDir {
 						figure(c, humanSize(f.Size)).Width(90).TextAlign(ui.End).TextColor(t.TextMuted)

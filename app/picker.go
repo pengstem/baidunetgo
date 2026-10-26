@@ -162,7 +162,7 @@ func (a *App) folderChooser(c *ui.Context, t *ui.Theme, p *palette, pk *picker, 
 				}
 				row.Children(func() {
 					ui.Icon(c, icon("folder")).FontSize(17).TextColor(p.Folder)
-					ui.Text(c, f.Name).Grow(1).SingleLine()
+					wholeOnHover(c, ui.Text(c, f.Name).Grow(1).SingleLine(), f.Name, 0)
 					ui.Icon(c, icon("chevron-right")).FontSize(14).TextColor(t.TextMuted)
 				})
 				if row.Clicked() {

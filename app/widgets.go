@@ -83,6 +83,19 @@ func pillOf(c *ui.Context, t *ui.Theme, p *palette, ic, label string, primary, f
 	return b
 }
 
+// wholeOnHover gives el, which shows s on one line at size (0 for the
+// theme's), s as its tooltip while it is cut short: narrower in the last
+// frame than s is. Names cut to fit a narrow window show whole this way,
+// as in Finder.
+func wholeOnHover(c *ui.Context, el ui.Element, s string, size float32) ui.Element {
+	if w := el.LayoutBounds().W; w > 0 {
+		if need, _ := c.MeasureText(0, ui.Span{Text: s, Size: size}); need > w+0.5 {
+			el.Tooltip(s)
+		}
+	}
+	return el
+}
+
 // figure is a number, its digits of one width so that they line up and
 // hold still as they change.
 func figure(c *ui.Context, s string) ui.Element {

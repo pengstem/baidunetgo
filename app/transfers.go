@@ -369,7 +369,7 @@ func (a *App) transferRow(c *ui.Context, t *ui.Theme, p *palette, task transfer.
 	col.Children(func() {
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 			a.fileIcon(c, t, p, &f, 18)
-			ui.Text(c, task.Name).SingleLine().Shrink(1)
+			wholeOnHover(c, ui.Text(c, task.Name).SingleLine().Shrink(1), task.Name, 0)
 			arrow, color := "↓", t.Accent
 			if task.Kind == transfer.Upload {
 				arrow, color = "↑", t.Success

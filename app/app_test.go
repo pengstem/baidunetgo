@@ -80,7 +80,7 @@ func TestBreadcrumbTips(t *testing.T) {
 		if !ok {
 			t.Fatalf("no %q", s)
 		}
-		tt.Move(r.X+r.W/2, r.Y+r.H/2)
+		tt.Move(r.X+min(r.W/2, 60), r.Y+r.H/2)
 		tt.Advance(time.Second)
 	}
 	rest("照片")
@@ -296,4 +296,54 @@ func TestFolderReadAgain(t *testing.T) {
 	l.read = time.Now().Add(-time.Minute)
 	a.refocused()
 	waitFor(t, tt, "又一个.txt")
+}
+
+// TestCutNamesShowWhole shows a name cut to fit, in a narrow list and in
+// a grid tile, whole in a tooltip as the pointer rests on it, and a name
+// shown whole in none.
+func TestCutNamesShowWhole(t *testing.T) {
+	a, tt, srv := signedIn(t)
+	long := "Andor.S01E03.Reckoning.ITA.ENG.2160p.UHD.BluRay.DDP.MeM.GP.mkv"
+	srv.Add(fakepan.Node{Path: "/剧集/" + long, Category: 1, Size: 8 << 30})
+	srv.Add(fakepan.Node{Path: "/剧集/短.mkv", Category: 1, Size: 1 << 20})
+	tt.SetSize(760, 600)
+	a.router.Push(filesRoute("/剧集"))
+	waitFor(t, tt, long)
+	tt.Advance(time.Second)
+	count := func(name string) (n int) {
+		for _, s := range tt.Texts() {
+			if s == name {
+				n++
+			}
+		}
+		return n
+	}
+	// tipped rests the pointer on the name shown as shown, near its
+	// start (a row's label is the whole row), and tells whether name
+	// showed once more for it.
+	tipped := func(name, shown string) bool {
+		r, ok := tt.Find(shown)
+		if !ok {
+			t.Fatalf("%s not shown; texts %q", name, tt.Texts())
+		}
+		tt.Move(1, 1)
+		tt.Advance(time.Second)
+		before := count(name)
+		tt.Move(r.X+min(r.W/2, 60), r.Y+r.H/2)
+		tt.Advance(time.Second)
+		return count(name) > before
+	}
+	if !tipped(long, long) {
+		t.Error("a name cut short in the list shows no tooltip")
+	}
+	save(t, tt, "cut-name-list")
+	if tipped("短.mkv", "短.mkv") {
+		t.Error("a name shown whole in the list shows a tooltip")
+	}
+	a.gridView = true
+	tt.Advance(time.Second)
+	if !tipped(long, a.tileNames[long]) {
+		t.Error("a name cut short in a tile shows no tooltip")
+	}
+	save(t, tt, "cut-name-tile")
 }

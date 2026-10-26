@@ -79,7 +79,7 @@ func (a *App) offlinePage(c *ui.Context, t *ui.Theme, p *palette) {
 				row.Children(func() {
 					a.fileIcon(c, t, p, &f, 28)
 					ui.Column(c).Grow(1).Shrink(1).Gap(4).Children(func() {
-						ui.Text(c, it.Name).SingleLine()
+						wholeOnHover(c, ui.Text(c, it.Name).SingleLine(), it.Name, 0)
 						if it.Status == 1 {
 							frac := float32(0)
 							if it.Size > 0 {

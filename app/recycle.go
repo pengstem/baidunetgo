@@ -66,7 +66,7 @@ func (a *App) recyclePage(c *ui.Context, t *ui.Theme, p *palette) {
 				row.Children(func() {
 					a.fileIcon(c, t, p, &it.File, 28)
 					ui.Column(c).Grow(1).Shrink(1).Gap(1).Children(func() {
-						ui.Text(c, it.Name).SingleLine()
+						wholeOnHover(c, ui.Text(c, it.Name).SingleLine(), it.Name, 0)
 						ui.Text(c, "原位置："+dirLabel(path.Dir(it.Path))+" · "+humanTime(it.Mtime, now)).
 							FontSize(11).TextColor(t.TextMuted).SingleLine()
 					})
