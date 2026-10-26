@@ -4,6 +4,12 @@
 
 <!-- 写在这里的内容会成为下一个版本的更新说明；留空则按提交记录自动生成。 -->
 
+## [0.5.3] - 2026-10-26
+
+### 改进
+
+- Show a name cut short to fit, in a narrow window's list or a grid tile, whole in a tooltip as the pointer rests on it, as Finder does, in the file list, search, recycle bin, shares, transfers, offline downloads, the folder picker and someone's share; names shown whole get none
+
 ## [0.5.2] - 2026-10-25
 
 ### 改进
