@@ -214,6 +214,9 @@ func (a *App) loadPreview(pv *previewState) {
 				pv.buf = editor.NewBuffer(text)
 				pv.buf.SetLanguage(editor.LanguageFor(pv.file.Name))
 				pv.ed = editor.State{Buffer: pv.buf, ReadOnly: true, SoftWrap: pv.kind != kindCode, NoScrollPastEnd: true}
+				if pv.kind != kindCode {
+					pv.ed.LineHeight = 1.8 // more leading for Chinese prose
+				}
 			})
 		}
 	}()
@@ -243,6 +246,9 @@ func decodeText(data []byte) string {
 func (a *App) startAudio(ctx context.Context, pv *previewState) {
 	s := a.sess
 	pv.loading = true
+	// Music can buffer further ahead than interface sounds, riding out
+	// the pause macOS takes while its appearance changes.
+	audio.SetLatency(audio.LatencyPlayback)
 	f := pv.file
 	go func() {
 		stream := remote.Open(ctx, s.client, baidu.Expired, f.Path, f.Size)

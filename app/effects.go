@@ -27,6 +27,10 @@ var (
 // drift away, before the rows after it close up.
 const dissolveFor = 1100 * time.Millisecond
 
+// Slow, continuous drawings need no more than 60 frames a second, even
+// on high-refresh displays. Other UI motion keeps the display's rate.
+const effectFPS = 60
+
 // epoch is the zero of the shaders' clocks.
 var epoch = time.Now()
 
@@ -67,7 +71,7 @@ func (fx specksFx) PaintEffect(p *ui.Painter, box ui.Rect, content *ui.Bitmap, i
 	specks.Effect(shader.Options{MaxSampleOffset: margin, Uniforms: map[string]any{
 		"Progress": fx.progress(now), "Gather": g, "Time": shaderClock(now), "Seed": fx.seed % 9973, "Tint": fx.tint, "Reach": reach,
 	}}).PaintEffect(p, box, content, inset)
-	p.AnimationFrame()
+	p.AnimationFrameRate(effectFPS)
 }
 
 // seedOf picks a file's specks by its path, which an upload's row and the
@@ -167,7 +171,7 @@ func (a *App) dropGlow(c *ui.Context, t *ui.Theme, over bool) {
 		glow.Draw(p, r, shader.Options{Uniforms: map[string]any{
 			"Time": shaderClock(p.Now()), "Strength": strength, "Burst": burst * burst, "Pad": 7, "Radius": 10,
 		}})
-		p.AnimationFrame()
+		p.AnimationFrameRate(effectFPS)
 	})
 }
 

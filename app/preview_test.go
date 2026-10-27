@@ -14,6 +14,7 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"github.com/pengstem/baidunetgo/internal/baidu"
+	"github.com/pengstem/baidunetgo/internal/fakepan"
 )
 
 const (
@@ -62,6 +63,51 @@ func TestPreviewText(t *testing.T) {
 	if a.pv != nil {
 		t.Error("Escape did not close the preview")
 	}
+}
+
+// Files of the newly highlighted languages must reach the code viewer,
+// including their alternate extensions, rather than the download card.
+func TestPreviewCodeLanguages(t *testing.T) {
+	a, tt, srv := signedIn(t)
+	cases := []struct{ name, language, source string }{
+		{"main.dart", "Dart", "void main() { print('你好'); }"},
+		{"query.graphql", "GraphQL", "query { viewer { name } }"},
+		{"query.gql", "GraphQL", "query { viewer { name } }"},
+		{"schema.graphqls", "GraphQL", "type Query { greeting: String }"},
+		{"analysis.R", "R", "mean(c(1, 2, 3))"},
+		{".Rprofile", "R", "options(stringsAsFactors = FALSE)"},
+		{"Main.scala", "Scala", "object Main { val greeting = \"你好\" }"},
+		{"main.sc", "Scala", "val greeting = \"你好\""},
+		{"build.sbt", "Scala", "scalaVersion := \"3.3.1\""},
+	}
+	for _, tc := range cases {
+		srv.Add(fakepan.Node{Path: "/代码/" + tc.name, Data: []byte(tc.source)})
+	}
+	a.router.Push(filesRoute("/代码"))
+	waitFor(t, tt, "main.dart")
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			a.open(fileNamed(t, a, "/代码", tc.name))
+			deadline := time.Now().Add(5 * time.Second)
+			for a.pv == nil || a.pv.buf == nil {
+				if a.pv == nil || a.pv.kind != kindCode || a.pv.err != "" || time.Now().After(deadline) {
+					t.Fatalf("code preview did not load: %+v", a.pv)
+				}
+				time.Sleep(10 * time.Millisecond)
+				tt.Advance(50 * time.Millisecond)
+			}
+			if lang := a.pv.buf.Language(); lang == nil || lang.Name != tc.language {
+				t.Fatalf("highlighting %v, want %s", lang, tc.language)
+			}
+			if got := a.pv.buf.Line(0); got != tc.source {
+				t.Errorf("source %q, want %q", got, tc.source)
+			}
+			if !a.pv.ed.ReadOnly || a.pv.ed.SoftWrap {
+				t.Error("code preview must stay read-only without wrapping")
+			}
+		})
+	}
+	a.closePreview()
 }
 
 func TestPreviewMarkdownAndPDF(t *testing.T) {

@@ -39,7 +39,7 @@ func init() {
 	add(kindVideo, "mp4 mkv avi mov wmv flv webm m4v ts m2ts rmvb rm 3gp mpg mpeg vob ogv")
 	add(kindAudio, "mp3 flac wav ogg oga opus m4a aac ape wma alac aiff")
 	add(kindText, "txt log csv tsv ini conf cfg srt ass ssa vtt nfo env properties")
-	add(kindCode, "go js mjs cjs ts tsx jsx json jsonc yaml yml toml xml html htm css scss less py rb rs c h cc cpp hpp cs java kt kts swift m mm php sh bash zsh fish ps1 bat lua sql r dart scala zig nim vue svelte proto gradle makefile dockerfile diff patch tex")
+	add(kindCode, "go js mjs cjs ts tsx jsx json jsonc yaml yml toml xml html htm css scss less py rb rs c h cc cpp hpp cs java kt kts swift m mm php sh bash zsh fish ps1 bat lua sql r dart scala sc sbt graphql gql graphqls zig nim vue svelte proto gradle makefile dockerfile diff patch tex")
 	add(kindMarkdown, "md markdown mdx")
 	add(kindPDF, "pdf")
 	add(kindArchive, "zip rar 7z tar gz tgz bz2 xz zst iso dmg")
@@ -52,6 +52,9 @@ func init() {
 func kindOf(f *baidu.File) kind {
 	if f.IsDir {
 		return kindFolder
+	}
+	if strings.EqualFold(f.Name, ".Rprofile") {
+		return kindCode
 	}
 	ext := strings.ToLower(strings.TrimPrefix(path.Ext(f.Name), "."))
 	if ext == "" {

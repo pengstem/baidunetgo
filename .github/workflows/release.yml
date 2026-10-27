@@ -123,12 +123,12 @@ jobs:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           shopt -s nullglob
-          files=(build/*/*.dmg build/*/*Setup*.exe build/*/*.deb build/*/*.tar.gz)
+          files=(build/*/*.dmg build/*/*-setup-*.exe build/*/*.deb build/*/*.tar.gz)
           # The Windows apps also as a zip, to run without installing.
           for dir in build/windows-*/; do
             arch="${dir%/}"; arch="${arch##*-}"
             zip="build/BaiduNetGo-$VERSION-windows-$arch.zip"
-            (cd "$dir" && zip -qr "$OLDPWD/$zip" . -x '*Setup*.exe')
+            (cd "$dir" && zip -qr "$OLDPWD/$zip" . -x '*-setup-*.exe')
             files+=("$zip")
           done
           printf '%s\n' "${files[@]}"
