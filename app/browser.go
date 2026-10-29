@@ -722,15 +722,15 @@ var sortOrders = []struct{ by, label string }{{"name", "名称"}, {"size", "大�
 func (a *App) sortMenu(c *ui.Context, t *ui.Theme, p *palette) {
 	toolButton(c, t, p, "arrow-down-wide-narrow", "排序方式").Menu(func(m *ui.Menu) {
 		for _, o := range sortOrders {
-			if m.Item(o.label).Checked(a.order.By == o.by).Chosen() && a.order.By != o.by {
+			if m.Item(o.label).Radio(a.order.By == o.by).Chosen() && a.order.By != o.by {
 				a.order = baidu.Order{By: o.by, Desc: o.by != "name"}
 			}
 		}
 		m.Separator()
-		if m.Item("升序").Checked(!a.order.Desc).Chosen() {
+		if m.Item("升序").Radio(!a.order.Desc).Chosen() {
 			a.order.Desc = false
 		}
-		if m.Item("降序").Checked(a.order.Desc).Chosen() {
+		if m.Item("降序").Radio(a.order.Desc).Chosen() {
 			a.order.Desc = true
 		}
 	})

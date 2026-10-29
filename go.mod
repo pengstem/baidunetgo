@@ -3,7 +3,7 @@ module github.com/pengstem/baidunetgo
 go 1.27.3
 
 require (
-	github.com/egoist/mygo v0.7.1
+	github.com/egoist/mygo v0.7.2
 	github.com/klippa-app/go-pdfium v1.21.3
 	github.com/qjfoidnh/BaiduPCS-Go v0.0.0-20260909034501-1b9131817aaf
 	github.com/qjfoidnh/baidu-tools v1.2.0

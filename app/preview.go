@@ -45,8 +45,9 @@ type previewState struct {
 	err      string
 
 	thumb   *ui.Bitmap
-	bmp     *ui.Bitmap
-	data    []byte // the picture's file, to copy
+	image   ui.ImageSource
+	video   *ui.VideoPlayer // animated pictures
+	data    []byte          // the picture's file, to copy
 	zoom    float32
 	pan     ui.Point
 	dismiss ui.Point
@@ -75,6 +76,9 @@ func (pv *previewState) close() {
 	}
 	if pv.player != nil {
 		pv.player.Close()
+	}
+	if pv.video != nil {
+		pv.video.Close()
 	}
 	if pv.doc != nil {
 		doc := pv.doc
@@ -178,14 +182,26 @@ func (a *App) loadPreview(pv *previewState) {
 		}
 		switch pv.kind {
 		case kindImage:
-			bmp, err := ui.DecodeBitmap(data)
+			img, video, err := decodePreviewImage(data)
 			a.update(func() {
+				if ctx.Err() != nil || a.pv != pv {
+					if video != nil {
+						video.Close()
+					}
+					return
+				}
 				pv.loading, pv.progress = false, 1
 				if err != nil {
 					pv.err = "这种图片格式无法预览"
+					if errors.Is(err, remote.ErrTooLarge) {
+						pv.err = previewError(err)
+					}
 					return
 				}
-				pv.bmp, pv.data = bmp, data
+				pv.image, pv.video, pv.data = img, video, data
+				if video != nil {
+					video.SetLoop(true)
+				}
 			})
 		case kindPDF:
 			doc, err := pdf.Open(ctx, data)
@@ -351,7 +367,7 @@ func (a *App) previewOverlay(c *ui.Context, t *ui.Theme, p *palette) {
 				if root.OverlayShortcut(0, ui.KeyRight) || root.OverlayShortcut(0, ui.KeyForward) {
 					a.step(1)
 				}
-				if pv.bmp != nil && root.OverlayShortcut(ui.Cmd, ui.KeyC) {
+				if pv.hasImage() && root.OverlayShortcut(ui.Cmd, ui.KeyC) {
 					a.copyImage(pv.file, pv.data)
 				}
 			}
@@ -392,9 +408,9 @@ func (a *App) previewBar(c *ui.Context, t *ui.Theme, p *palette, pv *previewStat
 			if pv.doc != nil {
 				meta += " · 第 " + itoa(pv.pdfShown()+1) + " / " + itoa(len(pv.doc.Pages)) + " 页"
 			}
-			if pv.bmp != nil {
-				w, h := pv.bmp.Size()
-				meta += " · " + itoa(w) + "×" + itoa(h)
+			if pv.hasImage() {
+				w, h := pv.imageSize()
+				meta += " · " + itoa(int(w)) + "×" + itoa(int(h))
 			}
 			if n := len(pv.group); n > 1 {
 				meta += " · " + itoa(pv.groupIndex()+1) + " / " + itoa(n)
@@ -412,7 +428,7 @@ func (a *App) previewBar(c *ui.Context, t *ui.Theme, p *palette, pv *previewStat
 				pv.zoomStep(1.5)
 			}
 		}
-		if pv.kind == kindImage && pv.bmp != nil {
+		if pv.kind == kindImage && pv.hasImage() {
 			if glassButton(c, "copy", "复制图片").Clicked() {
 				a.copyImage(pv.file, pv.data)
 			}
@@ -450,7 +466,17 @@ func (a *App) previewBar(c *ui.Context, t *ui.Theme, p *palette, pv *previewStat
 
 // zoomable reports whether the preview zooms: a picture, or a PDF.
 func (pv *previewState) zoomable() bool {
-	return pv.kind == kindImage && pv.bmp != nil || pv.doc != nil
+	return pv.kind == kindImage && pv.hasImage() || pv.doc != nil
+}
+
+func (pv *previewState) hasImage() bool { return pv.image != nil || pv.video != nil }
+
+func (pv *previewState) imageSize() (w, h float32) {
+	if pv.video != nil {
+		iw, ih := pv.video.Size()
+		return float32(iw), float32(ih)
+	}
+	return ui.ImageSize(pv.image)
 }
 
 // zoomBy zooms the picture by f, within 1 to 8 times; 0 fits it to the
@@ -545,8 +571,8 @@ func (a *App) previewMessage(c *ui.Context, t *ui.Theme, p *palette, pv *preview
 // pinch, the wheel and the buttons, panned with two fingers or dragged,
 // and dragged down to close.
 func (a *App) imageViewer(c *ui.Context, t *ui.Theme, p *palette, pv *previewState) {
-	src := pv.bmp
-	if src == nil {
+	src := pv.image
+	if src == nil && pv.thumb != nil {
 		src = pv.thumb
 	}
 	ww, wh := c.Size()
@@ -554,7 +580,7 @@ func (a *App) imageViewer(c *ui.Context, t *ui.Theme, p *palette, pv *previewSta
 	box := ui.Box(c).Fill().Center()
 	pv.view = box.Bounds()
 	box.HandleInput(func(ev ui.InputEvent) bool {
-		if pv.bmp == nil {
+		if !pv.hasImage() {
 			return false
 		}
 		switch {
@@ -576,21 +602,22 @@ func (a *App) imageViewer(c *ui.Context, t *ui.Theme, p *palette, pv *previewSta
 		return true
 	})
 	box.Children(func() {
-		if src == nil {
+		if src == nil && pv.video == nil {
 			a.previewLoading(c, t, p, pv)
 			return
 		}
-		iw, ih := src.Size()
-		if pv.bmp == nil && pv.thumb != nil {
+		iw, ih := pv.imageSize()
+		if !pv.hasImage() && pv.thumb != nil {
 			// Size the thumbnail as the picture will be: the netdisk's are
 			// of its proportions.
+			iw, ih = ui.ImageSize(pv.thumb)
 			iw, ih = iw*8, ih*8
 		}
-		scale := min(availW/float32(iw), availH/float32(ih), 1)
-		if pv.bmp == nil {
-			scale = min(availW/float32(iw), availH/float32(ih))
+		scale := min(availW/iw, availH/ih, 1)
+		if !pv.hasImage() {
+			scale = min(availW/iw, availH/ih)
 		}
-		w, h := float32(iw)*scale, float32(ih)*scale
+		w, h := iw*scale, ih*scale
 		z := box.AnimateTo("zoom", pv.zoom, motionPanel)
 		move := motionPanel
 		if pv.follow {
@@ -598,7 +625,13 @@ func (a *App) imageViewer(c *ui.Context, t *ui.Theme, p *palette, pv *previewSta
 			move = ui.Animation{Duration: time.Nanosecond}
 			pv.follow = false
 		}
-		img := ui.Image(c, src).Size(w*z, h*z).Fit(ui.Contain).Radius(3).
+		var img ui.Element
+		if pv.video != nil {
+			img = ui.Video(c, pv.video)
+		} else {
+			img = ui.Image(c, src)
+		}
+		img.Size(w*z, h*z).Fit(ui.Contain).Radius(3).
 			Shadow(0, 30, 80, -20, ui.RGBA(0, 0, 0, 0.6)).
 			ContentTransition(ui.ContentTransition{}).
 			Transition(ui.ElementTransition{Match: thumbMatch{pv.file.FsID}, Animation: &motionPanel})
@@ -623,7 +656,7 @@ func (a *App) imageViewer(c *ui.Context, t *ui.Theme, p *palette, pv *previewSta
 				return
 			}
 		}
-		if pv.bmp != nil {
+		if pv.hasImage() {
 			a.imageMenu(img, pv)
 		}
 		if img.DoubleClicked() {

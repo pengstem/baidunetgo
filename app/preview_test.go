@@ -243,7 +243,7 @@ func TestPreviewImage(t *testing.T) {
 	waitFor(t, tt, "IMG_2310.jpg")
 	a.open(fileNamed(t, a, "/照片", "IMG_2312.jpg"))
 	deadline := time.Now().Add(5 * time.Second)
-	for a.pv.bmp == nil {
+	for !a.pv.hasImage() {
 		if a.pv.err != "" || time.Now().After(deadline) {
 			t.Fatalf("image did not load: %q", a.pv.err)
 		}
@@ -299,7 +299,7 @@ func TestPreviewCopyImage(t *testing.T) {
 	waitFor(t, tt, "IMG_2310.jpg")
 	a.open(fileNamed(t, a, "/照片", "IMG_2311.jpg"))
 	deadline := time.Now().Add(5 * time.Second)
-	for a.pv.bmp == nil {
+	for !a.pv.hasImage() {
 		if a.pv.err != "" || time.Now().After(deadline) {
 			t.Fatalf("image did not load: %q", a.pv.err)
 		}
@@ -337,7 +337,7 @@ func TestPreviewPinchAndPan(t *testing.T) {
 	waitFor(t, tt, "IMG_2310.jpg")
 	a.open(fileNamed(t, a, "/照片", "IMG_2311.jpg"))
 	deadline := time.Now().Add(5 * time.Second)
-	for a.pv.bmp == nil {
+	for !a.pv.hasImage() {
 		if a.pv.err != "" || time.Now().After(deadline) {
 			t.Fatalf("image did not load: %q", a.pv.err)
 		}

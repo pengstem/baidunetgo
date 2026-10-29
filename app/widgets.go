@@ -180,7 +180,7 @@ func popUp(c *ui.Context, t *ui.Theme, p *palette, chosen *int, labels, icons []
 	})
 	b.Menu(func(m *ui.Menu) {
 		for i, l := range labels {
-			if m.Item(l).Checked(i == *chosen).Chosen() {
+			if m.Item(l).Radio(i == *chosen).Chosen() {
 				*chosen = i
 			}
 		}

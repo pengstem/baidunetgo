@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/egoist/mygo/netproxy"
 )
 
 // QRState is where a QR login is.
@@ -47,7 +49,7 @@ type QRLogin struct {
 func NewQRLogin(ctx context.Context) (*QRLogin, error) {
 	jar, _ := cookiejar.New(nil)
 	q := &QRLogin{
-		hc:      &http.Client{Jar: jar, Timeout: 45 * time.Second},
+		hc:      &http.Client{Jar: jar, Transport: netproxy.Transport(), Timeout: 45 * time.Second},
 		gid:     newGID(),
 		created: time.Now(),
 	}

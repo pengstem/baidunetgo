@@ -8,6 +8,7 @@ import (
 	"image"
 	"image/draw"
 	"image/png"
+	"math"
 
 	"github.com/egoist/mygo/transfer"
 	"github.com/egoist/mygo/ui"
@@ -72,7 +73,26 @@ func clipPNG(data []byte) ([]byte, error) {
 	}
 	img, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
-		return nil, err
+		// Clipboard consumers need pixels. Render SVGs at their natural
+		// size, keeping transparency, while the viewer keeps the vector.
+		svg, svgErr := ui.ParseSVG(data)
+		if svgErr != nil {
+			return nil, err
+		}
+		w, h := ui.ImageSize(svg)
+		w, h = float32(math.Ceil(float64(w))), float32(math.Ceil(float64(h)))
+		if w <= 0 || h <= 0 || math.IsNaN(float64(w)) || math.IsNaN(float64(h)) {
+			return nil, image.ErrFormat
+		}
+		if float64(w)*float64(h)*4 > float64(imageLimit) {
+			return nil, remote.ErrTooLarge
+		}
+		theme := ui.LightTheme()
+		theme.Background = ui.RGBA(0, 0, 0, 0)
+		img = ui.Render(func(c *ui.Context) {
+			c.SetTheme(theme)
+			ui.Image(c, svg).Size(w, h)
+		}, int(w), int(h), 1)
 	}
 	if o := exifOrientation(data); o > 1 {
 		img = orient(img, o)

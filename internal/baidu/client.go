@@ -19,6 +19,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/egoist/mygo/netproxy"
 	"github.com/qjfoidnh/BaiduPCS-Go/baidupcs"
 	"github.com/qjfoidnh/BaiduPCS-Go/pcsverbose"
 )
@@ -148,7 +149,7 @@ func Open(cr Credentials) *Client {
 func newTransport() *http.Transport {
 	d := &net.Dialer{Timeout: 15 * time.Second, KeepAlive: 30 * time.Second}
 	return &http.Transport{
-		Proxy:                 http.ProxyFromEnvironment,
+		Proxy:                 netproxy.Proxy,
 		DialContext:           d.DialContext,
 		ForceAttemptHTTP2:     true,
 		TLSHandshakeTimeout:   15 * time.Second,
