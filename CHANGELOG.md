@@ -4,6 +4,12 @@
 
 <!-- 写在这里的内容会成为下一个版本的更新说明；留空则按提交记录自动生成。 -->
 
+## [0.8.0] - 2026-11-01
+
+### 改进
+
+- Move folder creation and uploading into a dashed row ending the files, named in place and lit by files dragged over the window
+
 ## [0.7.0] - 2026-11-01
 
 ### 修复
