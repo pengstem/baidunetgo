@@ -258,6 +258,7 @@ func (a *App) onSignedIn() {
 
 // onSignedOut stops the work of the session.
 func (a *App) onSignedOut() {
+	a.creating = nil
 	a.login.stopQR()
 	a.stopThumbs()
 	if a.stream != nil {

@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"path"
-	"strings"
 
 	"github.com/egoist/mygo/ui"
 
@@ -15,7 +14,6 @@ type dialogKind int
 
 const (
 	dlgNone dialogKind = iota
-	dlgNewFolder
 	dlgMove
 	dlgCopy
 	dlgShare
@@ -54,8 +52,6 @@ func (l *listing) chosen() []baidu.File {
 func (a *App) ask(kind dialogKind, dir string, files []baidu.File) {
 	a.dlg = dialog{kind: kind, open: true, dir: dir, files: files}
 	switch kind {
-	case dlgNewFolder:
-		a.dlg.name = "新建文件夹"
 	case dlgMove, dlgCopy:
 		a.dlg.picker = picker{dir: dir}
 	}
@@ -164,8 +160,6 @@ func (a *App) dialogs(c *ui.Context, t *ui.Theme, p *palette) {
 		panel.Width(width).Padding(20).Gap(14).Radius(14).Background(p.Card).Border(1, p.Hairline).
 			Shadow(0, 16, 40, -12, p.Shadow).Transition(popIn)
 		switch d.kind {
-		case dlgNewFolder:
-			a.nameDialog(c, t, p, "新建文件夹", "在「"+dirLabel(d.dir)+"」中", "创建")
 		case dlgMove, dlgCopy:
 			a.pickerDialog(c, t, p)
 		case dlgShare:
@@ -228,25 +222,9 @@ func (a *App) dialogButtons(c *ui.Context, t *ui.Theme, p *palette, label string
 	return pressed
 }
 
-func (a *App) nameDialog(c *ui.Context, t *ui.Theme, p *palette, title, detail, action string) {
-	d := &a.dlg
-	dialogTitle(c, t, title, detail)
-	in := ui.TextInput(c, &d.name).AutoFocus().Label("名称").Height(38)
-	name := strings.TrimSpace(d.name)
-	valid := name != "" && !strings.ContainsAny(name, badNameChars)
-	if d.err == "" && name != "" && !valid {
-		ui.Text(c, `名称不能包含 / \ : * ? " < > |`).TextColor(t.Warning).FontSize(t.Rem(0.88))
-	}
-	submit := in.Submitted() && valid
-	if a.dialogButtons(c, t, p, action, false, !valid) || submit {
-		dir, target := d.dir, path.Join(d.dir, name)
-		a.run(func(ctx context.Context, c *baidu.Client) error { return c.Mkdir(ctx, target) }, []string{dir}, "已新建「"+name+"」", nil)
-	}
-}
-
 // fileActions handles the browser's keys on the files chosen.
 func (a *App) fileActions(c *ui.Context, l *listing) {
-	if a.dlg.open || a.pv != nil || a.renaming != nil {
+	if a.dlg.open || a.pv != nil || a.renaming != nil || a.creating != nil {
 		return
 	}
 	files := l.chosen()
@@ -254,7 +232,7 @@ func (a *App) fileActions(c *ui.Context, l *listing) {
 		a.router.Push(filesRoute(path.Dir(l.dir)))
 	}
 	if c.Shortcut(ui.Cmd|ui.Shift, ui.KeyN) {
-		a.ask(dlgNewFolder, l.dir, nil)
+		a.newFolder(l.dir)
 	}
 	if c.Shortcut(ui.Cmd, ui.KeyR) {
 		a.reload(l.dir)

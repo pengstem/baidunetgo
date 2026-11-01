@@ -52,7 +52,9 @@ type App struct {
 
 	pv            *previewState
 	dlg           dialog
-	renaming      *renaming // a name edited in place (rename.go)
+	renaming      *renaming    // a name edited in place (rename.go)
+	creating      *folderDraft // a folder named before it is created
+	dropHint      string       // the destination under a drag this frame
 	slow          slowClick
 	recycle       recycleState
 	recycleDirty  bool
@@ -206,6 +208,9 @@ func (a *App) View(c *ui.Context) {
 	if a.win == nil {
 		a.runQueued(c)
 	}
+	if d := a.creating; d != nil && !d.busy && a.currentDir() != d.dir {
+		a.creating = nil
+	}
 	if a.thumbs != nil {
 		a.thumbs.frame.Add(1)
 	}
@@ -226,7 +231,7 @@ func (a *App) View(c *ui.Context) {
 			Animation: &motionPanel,
 			Enter:     &ui.Motion{Scale: 0.97},
 		}).Children(func() { a.shell(c, t, p) })
-		if a.clipCheck && !a.dlg.open && a.pv == nil && a.renaming == nil {
+		if a.clipCheck && !a.dlg.open && a.pv == nil && a.renaming == nil && a.creating == nil {
 			a.clipCheck = false
 			a.checkClipboard(c)
 		}

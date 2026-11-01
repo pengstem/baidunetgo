@@ -50,6 +50,9 @@ const badNameChars = `/\:*?"<>|`
 
 // rename starts editing the name of f, in l, in place.
 func (a *App) rename(l *listing, f baidu.File) {
+	if a.creating != nil {
+		return
+	}
 	i := l.index(f.FsID)
 	if i < 0 || f.FsID < 0 || a.dying[f.FsID] != nil {
 		return
@@ -68,6 +71,9 @@ func (a *App) rename(l *listing, f baidu.File) {
 
 // renamingIn reports whether the name of f, in l, is being edited.
 func (a *App) renamingIn(l *listing, f *baidu.File) bool {
+	if f.FsID == draftFolderID {
+		return a.creating != nil && a.creating.dir == l.dir
+	}
 	r := a.renaming
 	return r != nil && r.dir == l.dir && r.id == f.FsID
 }
@@ -127,6 +133,10 @@ func (a *App) slowRename(c *ui.Context, l *listing) {
 // nameField is the input editing a file's name in place, where its name
 // shows, within the name's padding and border.
 func (a *App) nameField(c *ui.Context, t *ui.Theme, l *listing, f *baidu.File, center bool) {
+	if f.FsID == draftFolderID {
+		a.folderNameField(c, t, l, center)
+		return
+	}
 	r := a.renaming
 	pad := t.Space(0.5)
 	in := ui.TextInputBase(c.Key("rename"), &r.draft).Grow(1).Shrink(1).MinWidth(t.Space(10)).

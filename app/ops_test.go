@@ -22,8 +22,11 @@ func TestNewFolderAndRename(t *testing.T) {
 	a, tt, srv := signedIn(t)
 	tt.Key(ui.Cmd|ui.Shift, ui.KeyN)
 	tt.Advance(300 * time.Millisecond)
-	if a.dlg.kind != dlgNewFolder || !a.dlg.open {
-		t.Fatalf("dialog %+v", a.dlg.kind)
+	if a.creating == nil || a.dlg.open || !tt.Focused("新文件夹名称") {
+		t.Fatalf("folder not editing in place: %+v", a.creating)
+	}
+	if srv.Exists("/新建文件夹") {
+		t.Fatal("created before confirmation")
 	}
 	tt.Key(ui.Cmd, ui.KeyA)
 	tt.Type("相册")
