@@ -4,6 +4,17 @@
 
 <!-- 写在这里的内容会成为下一个版本的更新说明；留空则按提交记录自动生成。 -->
 
+## [0.7.0] - 2026-11-01
+
+### 修复
+
+- Revert folder creation and drag changes to restore the previous file browser
+
+### 改进
+
+- Create folders in place and drop files onto folders to upload or move them with clear destinations
+- Document repository workflows and architecture for coding assistants
+
 ## [0.6.1] - 2026-10-29
 
 ### 改进
