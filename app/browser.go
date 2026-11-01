@@ -33,7 +33,6 @@ func (a *App) filesPage(c *ui.Context, t *ui.Theme, p *palette, dir string) {
 		sortFiles(l.files, a.order)
 		l.sorted = a.order
 	}
-	a.folderDraftRow(l)
 	// Files coming and going are not chosen.
 	for id := range l.sel.All() {
 		if id < 0 || a.dying[id] != nil {
@@ -42,7 +41,6 @@ func (a *App) filesPage(c *ui.Context, t *ui.Theme, p *palette, dir string) {
 	}
 	a.fileActions(c, l)
 	a.slowRename(c, l)
-	a.dropHint = ""
 	page := ui.Column(c).Key("files:" + dir).Grow(1)
 	if dropped := page.DroppedFiles(); len(dropped) > 0 {
 		a.upload(dropped, dir)
@@ -55,13 +53,12 @@ func (a *App) filesPage(c *ui.Context, t *ui.Theme, p *palette, dir string) {
 		case !l.loaded:
 			loadingHint(c, t)
 		case len(l.files) == 0:
-			a.emptyFolder(c, t, p, dir)
+			emptyState(c, t, p, "folder-open", "这里还空着", "把文件拖进窗口即可上传", nil)
 		case a.gridView:
 			a.fileGrid(c, t, p, l)
 		default:
 			a.fileList(c, t, p, l)
 		}
-		a.folderDraftActions(c, t, p, l)
 		if l.loaded {
 			a.statusBar(c, t, p, l)
 		}
@@ -70,14 +67,7 @@ func (a *App) filesPage(c *ui.Context, t *ui.Theme, p *palette, dir string) {
 		if over {
 			a.dropZone(c, t, p, dir)
 		}
-		if a.dropHint != "" {
-			ui.Row(c).Absolute().Top(2).Left(16).Right(16).Height(26).Justify(ui.Center).
-				Padding(4, 10).Radius(7).Background(p.Card).Border(1, t.Accent).
-				PassThrough().TextColor(t.Text).Children(func() {
-				ui.Text(c, a.dropHint).SingleLine().Tooltip(a.dropHint)
-			})
-		}
-		a.dropGlow(c, t, over || a.dropHint != "")
+		a.dropGlow(c, t, over)
 	})
 	l.sole = 0
 	if files := l.chosen(); len(files) == 1 {
@@ -132,7 +122,6 @@ func (a *App) bindListState(l *listing) {
 
 func (a *App) fileList(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 	a.bindListState(l)
-	chosen := l.chosen()
 	now := c.Now()
 	a.listHeader(c, t, p)
 	list := ui.List(c, &l.list, len(l.files)).Grow(1).Padding(0, 10, 16)
@@ -151,7 +140,6 @@ func (a *App) fileList(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 		f := &l.files[row.Index]
 		r := ui.Row(c).Height(rowHeight).PaddingX(10).Gap(8).AlignItems(ui.Center).Radius(6).TextColor(t.Text)
 		muted := t.TextMuted
-		drop := a.folderDrop(r, l, f)
 		passing, gone := a.passing(r, f, t, now)
 		switch {
 		case passing:
@@ -171,24 +159,11 @@ func (a *App) fileList(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 		default:
 			r.Background(t.Background) // opaque, over the list's own fill
 		}
-		if drop {
-			r.Background(t.Background.Mix(t.Accent, 0.16)).Border(1, t.Accent)
-		}
 		if in := entering(r, l, row.Index, now, rowStagger); in < 1 {
 			r.Opacity(in).Translate(0, (1-in)*10).Scale(0.97+0.03*in, 0.97+0.03*in)
 		}
 		r.Children(func() {
-			handle := ui.Box(c).Size(18, 18).Center().Label("拖动 " + f.Name)
-			a.dragFile(handle, l, f, chosen)
-			if handle.Clicked() && f.FsID >= 0 {
-				l.grid.pivot = max(l.selected, 0)
-				l.grid.click(l, row.Index, handle.ClickModifiers())
-				l.list.Focus(c)
-			}
-			if handle.DoubleClicked() {
-				a.open(*f)
-			}
-			handle.Children(func() { a.fileIcon(c, t, p, f, 18) })
+			a.fileIcon(c, t, p, f, 18)
 			if a.renamingIn(l, f) {
 				a.nameField(c, t, l, f, false)
 			} else {
@@ -201,15 +176,12 @@ func (a *App) fileList(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 			ui.Text(c, kindLabel(f)).Width(colType).TextColor(muted).SingleLine()
 			figure(c, size).Width(colSize).TextAlign(ui.End).TextColor(muted)
 			when := stampTime(f.Mtime, now)
-			if f.FsID == draftFolderID {
-				when = "待创建"
-			}
 			if g := a.gathers[f.Path]; g != nil && f.FsID < 0 {
 				when = uploadLabel(g)
 			}
 			figure(c, when).Width(colTime).TextAlign(ui.End).TextColor(muted)
 		})
-		if !passing && f.FsID >= 0 {
+		if !passing {
 			a.fileMenu(r, l, row.Index)
 		}
 	})
@@ -272,11 +244,7 @@ func (a *App) listHeader(c *ui.Context, t *ui.Theme, p *palette) {
 func (a *App) statusBar(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 	ui.Row(c).Height(28).Shrink(0).PaddingX(20).Gap(14).AlignItems(ui.Center).BorderWidth(1, 0, 0, 0).BorderColor(p.Hairline).
 		FontSize(11).TextColor(t.TextMuted).Children(func() {
-		n := len(l.files)
-		if l.index(draftFolderID) >= 0 {
-			n--
-		}
-		label := itoa(n) + " 项"
+		label := itoa(len(l.files)) + " 项"
 		if n := l.sel.Len(); n > 1 {
 			label = "已选 " + itoa(n) + " 项，共 " + label
 		}
@@ -299,13 +267,10 @@ func statusDot(c *ui.Context, color ui.Color, label string) {
 
 func (a *App) fileGrid(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 	now := c.Now()
-	chosen := l.chosen()
 	a.tileGrid(c, l, func(i int, tile ui.Element) {
 		f := &l.files[i]
 		tile.Padding(10).Gap(8).AlignItems(ui.Center).Radius(t.Radius).TextColor(t.Text)
 		passing, _ := a.passing(tile, f, t, now)
-		a.dragFile(tile, l, f, chosen)
-		drop := a.folderDrop(tile, l, f)
 		fill := t.Background
 		switch {
 		case passing:
@@ -314,10 +279,6 @@ func (a *App) fileGrid(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 			fill = t.Background.Mix(t.Accent, 0.16)
 		case tile.Hovered():
 			fill = t.Background.Mix(t.Text, 0.05)
-		}
-		if drop {
-			fill = t.Background.Mix(t.Accent, 0.16)
-			tile.Border(1, t.Accent)
 		}
 		tile.Background(tile.AnimateColor("fill", fill, motionHover))
 		in := entering(tile, l, i, now, tileStagger)
@@ -362,7 +323,7 @@ func (a *App) fileGrid(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 				a.clickName(l, f, name)
 			}
 		})
-		if !passing && f.FsID >= 0 {
+		if !passing {
 			a.fileMenu(tile, l, i)
 		}
 	})
@@ -742,7 +703,7 @@ func (a *App) filesToolbar(c *ui.Context, t *ui.Theme, p *palette, dir string) {
 	tools.Children(func() {
 		a.viewSwitch(c, t, p)
 		if toolButton(c, t, p, "folder-plus", "新建文件夹").Clicked() {
-			a.newFolder(dir)
+			a.ask(dlgNewFolder, dir, nil)
 		}
 		if toolButton(c, t, p, "refresh-cw", "刷新").Clicked() {
 			a.reload(dir)
