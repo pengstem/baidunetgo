@@ -44,7 +44,7 @@ func TestCompactToolbar(t *testing.T) {
 	if a.compact {
 		t.Fatal("compact at full width")
 	}
-	tt.SetSize(760, 600)
+	tt.SetSize(700, 600)
 	tt.Advance(time.Second)
 	if !a.compact {
 		t.Fatal("not compact in a narrow window")

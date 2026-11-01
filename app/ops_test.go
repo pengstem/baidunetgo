@@ -18,21 +18,77 @@ func settle(tt *ui.Tester) {
 	}
 }
 
-func TestNewFolderAndRename(t *testing.T) {
+// TestNewFolderInPlace: the maker ending the files names a new folder in
+// place, Cmd-Shift-N or its button starting it; Escape gives up, Enter
+// makes it, and the folder made is chosen.
+func TestNewFolderInPlace(t *testing.T) {
 	a, tt, srv := signedIn(t)
+	editing := func() bool { on, _ := tt.TextInputActive(); return on }
+	tt.Advance(time.Second)
 	tt.Key(ui.Cmd|ui.Shift, ui.KeyN)
 	tt.Advance(300 * time.Millisecond)
-	if a.dlg.kind != dlgNewFolder || !a.dlg.open {
-		t.Fatalf("dialog %+v", a.dlg.kind)
+	if a.creating == nil || !editing() || a.dlg.open {
+		t.Fatalf("Cmd-Shift-N did not name a folder in place: dialog %v", a.dlg.open)
+	}
+	tt.Key(0, ui.KeyEscape)
+	tt.Advance(300 * time.Millisecond)
+	if a.creating != nil {
+		t.Fatal("Escape did not give up")
+	}
+	if err := tt.Click("新建文件夹"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Advance(300 * time.Millisecond)
+	if !editing() {
+		t.Fatal("the maker's button did not name a folder")
 	}
 	tt.Key(ui.Cmd, ui.KeyA)
 	tt.Type("相册")
 	tt.Key(0, ui.KeyEnter)
 	settle(tt)
-	if !srv.Exists("/相册") || !tt.HasText("相册") {
-		t.Fatalf("folder not made; texts %q", tt.Texts())
+	l := a.listings["/"]
+	if !srv.Exists("/相册") || a.creating != nil || l.sel.Len() != 1 || l.files[l.selected].Name != "相册" {
+		t.Fatalf("folder not made and chosen; texts %q", tt.Texts())
 	}
+	save(t, tt, "new-folder")
+	// A name taken is refused, and stays to be named again.
+	tt.Key(ui.Cmd|ui.Shift, ui.KeyN)
+	tt.Advance(300 * time.Millisecond)
+	tt.Key(ui.Cmd, ui.KeyA)
+	tt.Type("相册")
+	tt.Key(0, ui.KeyEnter)
+	tt.Advance(300 * time.Millisecond)
+	if a.creating == nil || !editing() {
+		t.Fatal("a name taken ended naming the folder")
+	}
+}
 
+// TestMakerInGridAndEmpty: the grid's last tile is the maker, naming a
+// folder where it shows, and an empty folder offers it under its words.
+func TestMakerInGridAndEmpty(t *testing.T) {
+	a, tt, srv := signedIn(t)
+	a.gridView = true
+	tt.Advance(time.Second)
+	if err := tt.Click("新建文件夹"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Advance(300 * time.Millisecond)
+	if on, _ := tt.TextInputActive(); !on || a.creating == nil {
+		t.Fatal("the grid's maker did not name a folder")
+	}
+	save(t, tt, "maker-grid")
+	tt.Key(0, ui.KeyEnter)
+	settle(tt)
+	if !srv.Exists("/新建文件夹") || a.creating != nil {
+		t.Fatal("the folder was not made")
+	}
+	a.gridView = false
+	a.router.Push(filesRoute("/新建文件夹"))
+	settle(tt)
+	if !tt.HasText("这里还空着") || !tt.HasText("上传文件") {
+		t.Fatalf("texts %q", tt.Texts())
+	}
+	save(t, tt, "maker-empty")
 }
 
 // TestRenameInPlace: the name is edited where it shows, as in Finder: F2,

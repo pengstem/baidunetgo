@@ -53,6 +53,7 @@ type App struct {
 	pv            *previewState
 	dlg           dialog
 	renaming      *renaming // a name edited in place (rename.go)
+	creating      *creating // a folder named in the maker (newfolder.go)
 	slow          slowClick
 	recycle       recycleState
 	recycleDirty  bool
@@ -226,7 +227,7 @@ func (a *App) View(c *ui.Context) {
 			Animation: &motionPanel,
 			Enter:     &ui.Motion{Scale: 0.97},
 		}).Children(func() { a.shell(c, t, p) })
-		if a.clipCheck && !a.dlg.open && a.pv == nil && a.renaming == nil {
+		if a.clipCheck && !a.dlg.open && a.pv == nil && a.renaming == nil && a.creating == nil {
 			a.clipCheck = false
 			a.checkClipboard(c)
 		}

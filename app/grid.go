@@ -48,10 +48,11 @@ func gridCols(w float32) int {
 }
 
 // tileGrid shows the files of l as tiles, built only as they show, with
-// tile(i, e) filling the tile of file i: a click chooses it, as the arrows
+// tile(i, e) filling the tile of file i and maker(e) the maker's, the
+// last: a click chooses it, as the arrows
 // do in two dimensions while the grid has the focus, Cmd and Shift choose
 // several, and a double click or Enter opens it.
-func (a *App) tileGrid(c *ui.Context, l *listing, tile func(i int, e ui.Element)) {
+func (a *App) tileGrid(c *ui.Context, l *listing, maker func(e ui.Element), tile func(i int, e ui.Element)) {
 	g := &l.grid
 	n := len(l.files)
 	grid := ui.Scroll(c.Key("grid")).Grow(1).Padding(gridPadTop, gridPadX, gridPadEnd).
@@ -86,7 +87,7 @@ func (a *App) tileGrid(c *ui.Context, l *listing, tile func(i int, e ui.Element)
 		g.scroll.Y = gridPadTop + float32(row*g.cols/cols)*gridPitch + (y - float32(row)*gridPitch)
 	}
 	g.cols = cols
-	rows := (n + cols - 1) / cols
+	rows := (n + cols) / cols // the maker after the files
 	first := max(0, int((g.scroll.Y-gridPadTop)/gridPitch)-1)
 	last := min(rows, int((g.scroll.Y+viewH)/gridPitch)+2)
 	if g.built == nil {
@@ -95,16 +96,19 @@ func (a *App) tileGrid(c *ui.Context, l *listing, tile func(i int, e ui.Element)
 	pitchX := width / float32(cols)
 	grid.Children(func() {
 		ui.Box(c).FillWidth().Height(float32(rows) * gridPitch).Children(func() {
-			for i := first * cols; i < min(n, last*cols); i++ {
-				f := &l.files[i]
+			for i := first * cols; i < min(n+1, last*cols); i++ {
+				id := makerID
+				if i < n {
+					id = l.files[i].FsID
+				}
 				col, row := i%cols, i/cols
 				spot := gridSpot{col: col, row: row, x: float32(col) * pitchX, y: gridPadTop + float32(row)*gridPitch - g.scroll.Y}
-				slot := ui.Column(c.Key(f.FsID)).Absolute().Top(float32(row)*gridPitch).Height(gridPitch).
+				slot := ui.Column(c.Key(id)).Absolute().Top(float32(row)*gridPitch).Height(gridPitch).
 					LeftPercent(float32(col)*100/float32(cols)).WidthPercent(100/float32(cols)).
 					Padding(tileInsetY, tileInsetX)
 				// A tile in another cell than in the last frame starts from
 				// where it showed, and glides to its place.
-				if was, ok := g.spots[f.FsID]; ok && (was.col != col || was.row != row) {
+				if was, ok := g.spots[id]; ok && (was.col != col || was.row != row) {
 					slot.Jump("dx", was.x-spot.x)
 					slot.Jump("dy", was.y-spot.y)
 				}
@@ -113,7 +117,12 @@ func (a *App) tileGrid(c *ui.Context, l *listing, tile func(i int, e ui.Element)
 					slot.Translate(dx, dy)
 				}
 				spot.x, spot.y = spot.x+dx, spot.y+dy
-				g.built[f.FsID] = spot
+				g.built[id] = spot
+				if i == n {
+					slot.Children(func() { maker(ui.Column(c).Grow(1)) })
+					continue
+				}
+				f := &l.files[i]
 				slot.Children(func() {
 					e := ui.Column(c).Grow(1).Role(ui.RoleListItem).Label(f.Name)
 					// Clicks in a name edited are the input's.

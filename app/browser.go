@@ -33,6 +33,7 @@ func (a *App) filesPage(c *ui.Context, t *ui.Theme, p *palette, dir string) {
 		sortFiles(l.files, a.order)
 		l.sorted = a.order
 	}
+	a.settleMaker(l)
 	// Files coming and going are not chosen.
 	for id := range l.sel.All() {
 		if id < 0 || a.dying[id] != nil {
@@ -42,6 +43,12 @@ func (a *App) filesPage(c *ui.Context, t *ui.Theme, p *palette, dir string) {
 	a.fileActions(c, l)
 	a.slowRename(c, l)
 	page := ui.Column(c).Key("files:" + dir).Grow(1)
+	// Files dragged over the window light the maker, brought into view.
+	if over := page.FileDragOver(); over != l.over {
+		if l.over = over; over && l.loaded {
+			a.showMaker(l)
+		}
+	}
 	if dropped := page.DroppedFiles(); len(dropped) > 0 {
 		a.upload(dropped, dir)
 		a.dropped = c.Now()
@@ -53,7 +60,7 @@ func (a *App) filesPage(c *ui.Context, t *ui.Theme, p *palette, dir string) {
 		case !l.loaded:
 			loadingHint(c, t)
 		case len(l.files) == 0:
-			emptyState(c, t, p, "folder-open", "这里还空着", "把文件拖进窗口即可上传", nil)
+			a.emptyFolder(c, t, p, l)
 		case a.gridView:
 			a.fileGrid(c, t, p, l)
 		default:
@@ -63,32 +70,12 @@ func (a *App) filesPage(c *ui.Context, t *ui.Theme, p *palette, dir string) {
 			a.statusBar(c, t, p, l)
 		}
 		a.selectionBar(c, t, p, l, page.Bounds().W)
-		over := page.FileDragOver()
-		if over {
-			a.dropZone(c, t, p, dir)
-		}
-		a.dropGlow(c, t, over)
+		a.dropGlow(c, t, l.over)
 	})
 	l.sole = 0
 	if files := l.chosen(); len(files) == 1 {
 		l.sole = files[0].FsID
 	}
-}
-
-// dropZone shows where files dragged over the window will go.
-func (a *App) dropZone(c *ui.Context, t *ui.Theme, p *palette, dir string) {
-	zone := ui.Column(c).Key("dropzone").Absolute().Top(6).Left(8).Right(8).Bottom(8).Center().Gap(12).
-		Radius(10).Background(t.Background.Alpha(0.8)).PassThrough().
-		Transition(ui.ElementTransition{Animation: &motionFade, Enter: &ui.Motion{Opacity: 0}, Exit: &ui.Motion{Opacity: 0}})
-	zone.Children(func() {
-		disc := ui.Box(c).Size(52, 52).Radius(26).Center().Background(t.Accent).TextColor(t.AccentText)
-		// The arrow rises and settles, again and again.
-		lift := disc.Loop("lift", 1600*time.Millisecond, ui.Bounce(ui.EaseInOut))
-		disc.Children(func() {
-			ui.Icon(c, icon("upload")).FontSize(24).Translate(0, 2-4*lift)
-		})
-		ui.Text(c, "松开以上传到「"+dirLabel(dir)+"」").FontSize(14).FontWeight(500)
-	})
 }
 
 // entering returns how far the file at i is into its entrance, from 0 to
@@ -113,8 +100,21 @@ func loadingHint(c *ui.Context, t *ui.Theme) {
 
 func (a *App) bindListState(l *listing) {
 	files := l.files
-	l.list.Key = func(i int) any { return files[i].FsID }
-	l.list.Label = func(i int) string { return files[i].Name }
+	// The row after the files is the maker, a header so that it is never
+	// chosen.
+	l.list.Key = func(i int) any {
+		if i == len(files) {
+			return makerID
+		}
+		return files[i].FsID
+	}
+	l.list.Label = func(i int) string {
+		if i == len(files) {
+			return ""
+		}
+		return files[i].Name
+	}
+	l.list.Header = func(i int) bool { return i == len(files) }
 	l.list.Selected = &l.selected
 	l.list.Selection = &l.sel
 	l.list.DragSelect = true // a drag over the rows chooses them, as in Finder
@@ -124,7 +124,7 @@ func (a *App) fileList(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 	a.bindListState(l)
 	now := c.Now()
 	a.listHeader(c, t, p)
-	list := ui.List(c, &l.list, len(l.files)).Grow(1).Padding(0, 10, 16)
+	list := ui.List(c, &l.list, len(l.files)+1).Grow(1).Padding(0, 10, 16)
 	outer, enter := c, false
 	list.Rows(func(row ui.ListRow) {
 		if enterRenames && !enter {
@@ -137,6 +137,15 @@ func (a *App) fileList(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 			}
 		}
 		c := row.Context
+		if row.Index == len(l.files) {
+			ui.Column(c).Padding(6, 0, 0).Children(func() {
+				m := a.makerRow(c, t, p, l)
+				if in := entering(m, l, row.Index, now, rowStagger); in < 1 {
+					m.Opacity(in).Translate(0, (1-in)*10)
+				}
+			})
+			return
+		}
 		f := &l.files[row.Index]
 		r := ui.Row(c).Height(rowHeight).PaddingX(10).Gap(8).AlignItems(ui.Center).Radius(6).TextColor(t.Text)
 		muted := t.TextMuted
@@ -267,7 +276,7 @@ func statusDot(c *ui.Context, color ui.Color, label string) {
 
 func (a *App) fileGrid(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 	now := c.Now()
-	a.tileGrid(c, l, func(i int, tile ui.Element) {
+	a.tileGrid(c, l, func(e ui.Element) { a.makerTile(c, t, p, l, e) }, func(i int, tile ui.Element) {
 		f := &l.files[i]
 		tile.Padding(10).Gap(8).AlignItems(ui.Center).Radius(t.Radius).TextColor(t.Text)
 		passing, _ := a.passing(tile, f, t, now)
@@ -702,9 +711,6 @@ func (a *App) filesToolbar(c *ui.Context, t *ui.Theme, p *palette, dir string) {
 	a.toolsFolded = a.compact
 	tools.Children(func() {
 		a.viewSwitch(c, t, p)
-		if toolButton(c, t, p, "folder-plus", "新建文件夹").Clicked() {
-			a.ask(dlgNewFolder, dir, nil)
-		}
 		if toolButton(c, t, p, "refresh-cw", "刷新").Clicked() {
 			a.reload(dir)
 		}
