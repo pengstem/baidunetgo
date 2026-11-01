@@ -4,6 +4,12 @@
 
 <!-- 写在这里的内容会成为下一个版本的更新说明；留空则按提交记录自动生成。 -->
 
+## [0.8.1] - 2026-11-01
+
+### 改进
+
+- Name new folders at the top as rows make room, fly folders and dropped files into their places, restyle the maker as an accent row, and drop the glow ring
+
 ## [0.8.0] - 2026-11-01
 
 ### 改进
