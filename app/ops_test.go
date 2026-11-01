@@ -30,6 +30,18 @@ func TestNewFolderInPlace(t *testing.T) {
 	if a.creating == nil || !editing() || a.dlg.open {
 		t.Fatalf("Cmd-Shift-N did not name a folder in place: dialog %v", a.dlg.open)
 	}
+	if l := a.listings["/"]; l.files[0].FsID != draftID {
+		t.Fatal("the folder is not named at the top")
+	}
+	save(t, tt, "new-folder-naming")
+	// A click elsewhere gives up a folder not named.
+	tt.ClickAt(700, 600)
+	settle(tt)
+	if a.creating != nil || srv.Exists("/新建文件夹") || a.listings["/"].index(draftID) >= 0 {
+		t.Fatal("a click away made the folder")
+	}
+	tt.Key(ui.Cmd|ui.Shift, ui.KeyN)
+	tt.Advance(300 * time.Millisecond)
 	tt.Key(0, ui.KeyEscape)
 	tt.Advance(300 * time.Millisecond)
 	if a.creating != nil {

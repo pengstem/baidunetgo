@@ -47,13 +47,13 @@ type App struct {
 	dying       map[int64]*dying   // files deleted, dissolving (arrivals.go)
 	gathers     map[string]*gather // uploads, by the entry of their folder they make
 	passed      time.Time          // when passTime last moved them on
-	dropped     time.Time          // when files were last dropped on the browser
 	gpu         bool               // the window draws on a GPU, so shaders draw at speed
 
 	pv            *previewState
 	dlg           dialog
-	renaming      *renaming // a name edited in place (rename.go)
-	creating      *creating // a folder named in the maker (newfolder.go)
+	renaming      *renaming          // a name edited in place (rename.go)
+	creating      *creating          // a folder named in the maker (newfolder.go)
+	flights       map[string]*flight // files on their way into folders (landing.go)
 	slow          slowClick
 	recycle       recycleState
 	recycleDirty  bool

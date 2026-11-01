@@ -5,26 +5,38 @@ import (
 	"math"
 	"path"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/egoist/mygo/ui"
+
+	"github.com/pengstem/baidunetgo/internal/baidu"
 )
 
-// The maker is the dashed row that ends a folder's files, or its last
-// tile in the grid, where what the folder holds is made: a folder, named
-// in place as Finder names one, or files uploaded, picked or dragged onto
-// the window, which light it up while they are over it. It takes the
-// place of a button for each in the title bar.
+// The maker is the row that ends a folder's files, or its last tile in
+// the grid, where what the folder holds is made: a folder, or files
+// uploaded, picked or dragged onto the window, which light it up while
+// they are over it. It takes the place of a button for each in the title
+// bar.
+//
+// A new folder is named where folders are, at the top: the rows make room
+// for it, and it comes from the maker's button into the gap (landing.go).
+// Once made, it goes from there to its place among the folders.
 
-// makerID keys the maker's tile among the grid's, whose files have ids
-// above it, uploads' negative ones included.
-const makerID int64 = math.MinInt64
+// makerID keys the maker's tile among the grid's, and draftID the folder
+// being named among the files, whose ids are above them, uploads'
+// negative ones included.
+const (
+	makerID int64 = math.MinInt64
+	draftID int64 = math.MinInt64 + 1
+)
 
-// creating is a folder being named in the maker: Enter, or moving the
-// focus away, makes it, Escape or an empty name gives up. It stays,
-// waiting, until the folder shows in the listing, which then chooses it.
+// creating is a folder being named: Enter makes it, Escape, or moving the
+// focus away with its name untouched, gives up. It stays, waiting, until
+// the folder shows in the listing, which then chooses it.
 type creating struct {
 	dir   string
+	first string // the name it was given
 	draft string
 	fresh bool // not shown yet: the input takes the focus when it shows
 	held  bool // the input has had the focus
@@ -33,16 +45,20 @@ type creating struct {
 	loads int // the listing's loads when it was made
 }
 
-// newFolder starts naming a new folder in l, in the maker.
-func (a *App) newFolder(l *listing) {
+// newFolder starts naming a new folder in l, at its top, coming from a
+// box in the window.
+func (a *App) newFolder(l *listing, from ui.Rect) {
 	if m := a.creating; m != nil && m.busy {
 		return
 	}
 	a.renaming, a.slow = nil, slowClick{}
-	a.creating = &creating{dir: l.dir, draft: unusedName(l, "新建文件夹"), fresh: true}
+	name := unusedName(l, "新建文件夹")
+	a.creating = &creating{dir: l.dir, first: name, draft: name, fresh: true}
+	a.fly(l.dir, draftKey(l.dir), baidu.File{Name: name, IsDir: true}, from)
 	l.sel.Clear()
 	l.selected = -1
-	a.showMaker(l)
+	l.list.ScrollTo(0, ui.Start)
+	l.grid.scroll.Y = 0
 }
 
 // unusedName is name, or name numbered as freeName does when l already
@@ -50,7 +66,9 @@ func (a *App) newFolder(l *listing) {
 func unusedName(l *listing, name string) string {
 	taken := map[string]bool{}
 	for _, f := range l.files {
-		taken[strings.ToLower(f.Name)] = true
+		if f.FsID != draftID {
+			taken[strings.ToLower(f.Name)] = true
+		}
 	}
 	if !taken[strings.ToLower(name)] {
 		return name
@@ -76,31 +94,62 @@ func (a *App) creatingIn(l *listing) *creating {
 	return nil
 }
 
+// placeDraft puts the folder being named at the top of l's files, and
+// takes it out once it is made or given up.
+func (a *App) placeDraft(l *listing) {
+	if i := l.index(draftID); i >= 0 {
+		l.files = append(l.files[:i:i], l.files[i+1:]...)
+	}
+	m := a.creatingIn(l)
+	if m == nil || !l.loaded {
+		return
+	}
+	draft := baidu.File{FsID: draftID, IsDir: true, Name: m.draft, Path: path.Join(l.dir, m.draft)}
+	l.files = append([]baidu.File{draft}, l.files...)
+}
+
 // settleMaker ends naming a folder once the listing read after making it
-// has come in, choosing the folder.
+// has come in, choosing the folder, which goes from the top to its place.
 func (a *App) settleMaker(l *listing) {
 	m := a.creatingIn(l)
 	if m == nil || m.made == "" || l.loads <= m.loads {
 		return
 	}
 	a.creating = nil
-	if i := l.indexNamed(m.made); i >= 0 {
-		l.sel.Clear()
-		l.sel.Add(l.files[i].FsID)
-		l.selected = i
-		l.refocus = true
-		if a.gridView {
-			l.grid.pivot = i
-			l.grid.scrollIntoView(i, a.gridSize[1])
-		} else {
-			l.list.ScrollIntoView(i)
-		}
+	i := l.indexNamed(m.made)
+	if i < 0 {
+		return
+	}
+	a.fly(l.dir, l.files[i].Path, l.files[i], l.draftAt)
+	l.landing = l.files[i].Path
+}
+
+// chooseLanded chooses the folder made once its card has landed: the list
+// paints a row chosen itself, under the row hidden while the card flies.
+func (a *App) chooseLanded(l *listing, now time.Time) {
+	if l.landing == "" {
+		return
+	}
+	if fl := a.flights[l.landing]; fl != nil && fl.progress(now) < 1 {
+		return
+	}
+	i := l.indexKey(l.landing)
+	l.landing = ""
+	if i < 0 {
+		return
+	}
+	l.sel.Clear()
+	l.sel.Add(l.files[i].FsID)
+	l.selected = i
+	l.refocus = true
+	if a.gridView {
+		l.grid.pivot = i
 	}
 }
 
-// makeFolder makes the folder named in the maker, unless its name is
-// empty, which gives up, or one the netdisk would refuse, which a toast
-// says and, after Enter, leaves it to be named again.
+// makeFolder makes the folder named, unless its name is empty, which
+// gives up, or one the netdisk would refuse, which a toast says and,
+// after Enter, leaves it to be named again.
 func (a *App) makeFolder(l *listing, enter bool) {
 	m := a.creating
 	name := strings.TrimSpace(m.draft)
@@ -111,7 +160,7 @@ func (a *App) makeFolder(l *listing, enter bool) {
 		return
 	case strings.ContainsAny(name, badNameChars):
 		why = `名称不能包含 / \ : * ? " < > |`
-	case l.indexNamed(name) >= 0:
+	case l.indexNamed(name) >= 0 && l.files[l.indexNamed(name)].FsID != draftID:
 		why = "这里已有名为「" + name + "」的项目"
 	}
 	s := a.sess
@@ -143,13 +192,13 @@ func (a *App) makeFolder(l *listing, enter bool) {
 	}()
 }
 
-// makerField is the input naming a new folder in the maker.
+// makerField is the input naming a new folder, where its name shows.
 func (a *App) makerField(c *ui.Context, t *ui.Theme, l *listing, center bool) {
 	m := a.creating
 	pad := t.Space(0.5)
 	in := ui.TextInputBase(c.Key("maker-name"), &m.draft).Grow(1).Shrink(1).MinWidth(t.Space(10)).
-		Padding(pad, pad*2).Radius(t.Space(1)).Background(t.Background).Border(1, t.Accent).
-		TextColor(t.Text).Label("新文件夹的名称")
+		Padding(pad, pad*2).Margin(-pad-1, -pad*2-1).Radius(t.Space(1)).Background(t.Background).
+		Border(1, t.Accent).TextColor(t.Text).Label("新文件夹的名称")
 	if center {
 		in.TextAlign(ui.Center)
 	}
@@ -170,60 +219,72 @@ func (a *App) makerField(c *ui.Context, t *ui.Theme, l *listing, center bool) {
 		a.creating = nil
 		l.refocus = true
 	case m.held && !in.Focused():
+		// A click elsewhere gives up a folder not named yet, and keeps
+		// one named.
+		if strings.TrimSpace(m.draft) == m.first {
+			a.creating = nil
+			return
+		}
 		a.makeFolder(l, false)
 	}
 }
 
-// makerFrame dresses e as the maker: dashed, quiet, and lit in the
-// accent while files are dragged over the window or a folder is named.
-func makerFrame(e ui.Element, t *ui.Theme, lit bool) {
-	edge, fill := t.TextMuted.Alpha(0.35), t.Background.Alpha(0)
-	if lit {
-		edge, fill = t.Accent, t.Background.Mix(t.Accent, 0.08)
-	}
-	e.Border(1, e.AnimateColor("edge", edge, motionHover)).BorderStyle(ui.BorderDashed).
-		Background(e.AnimateColor("fill", fill, motionHover)).TextColor(t.TextMuted)
-}
-
-// makerButton is one of the maker's actions, an icon and a label in the
-// muted text, the text color while hovered.
+// makerButton is one of the maker's actions: its icon white on an accent
+// disc, its label in the accent, as Reminders' new item.
 func makerButton(c *ui.Context, t *ui.Theme, ic, label string) ui.Element {
-	b := ui.ButtonBase(c).Label(label).Gap(5).AlignItems(ui.Center).Justify(ui.Center).Padding(4, 10).Radius(6)
+	b := ui.ButtonBase(c).Label(label).Height(28).PaddingX(8).Gap(8).AlignItems(ui.Center).Radius(7).
+		TextColor(t.Accent).FontWeight(500)
+	hover := t.Accent.Alpha(0)
 	if b.Hovered() {
-		b.TextColor(t.Text)
+		hover = t.Accent.Alpha(0.1)
 	}
+	b.Background(b.AnimateColor("hover", hover, motionHover))
 	b.Children(func() {
-		ui.Icon(c, icon(ic)).FontSize(13)
+		ui.Box(c).Size(18, 18).Radius(9).Center().Background(t.Accent).TextColor(t.AccentText).Children(func() {
+			ui.Icon(c, icon(ic)).FontSize(12)
+		})
 		ui.Text(c, label).SingleLine()
 	})
 	return b
 }
 
+// newFolderButton is the maker's button making a folder, the folder being
+// named coming from it.
+func (a *App) newFolderButton(c *ui.Context, t *ui.Theme, l *listing) ui.Element {
+	b := makerButton(c, t, "plus", "新建文件夹")
+	if b.Clicked() {
+		a.newFolder(l, b.Bounds())
+	}
+	return b
+}
+
 // makerRow is the maker as the row ending the list, or the empty
 // folder's.
-func (a *App) makerRow(c *ui.Context, t *ui.Theme, p *palette, l *listing) ui.Element {
-	m := a.creatingIn(l)
-	row := ui.Row(c.Key("maker")).Height(rowHeight + 4).PaddingX(10).Gap(8).AlignItems(ui.Center).Justify(ui.Center).Radius(7)
-	makerFrame(row, t, l.over || m != nil)
+func (a *App) makerRow(c *ui.Context, t *ui.Theme, p *palette, l *listing, center bool) ui.Element {
+	row := ui.Row(c.Key("maker")).Height(rowHeight + 4).PaddingX(2).Gap(4).AlignItems(ui.Center).Radius(8)
+	if center {
+		row.Justify(ui.Center)
+	}
+	fill := t.Accent.Alpha(0)
+	if l.over {
+		fill = t.Accent
+	}
+	row.Background(row.AnimateColor("fill", fill, motionFade))
+	if b := row.Bounds(); b.W > 0 {
+		l.makerAt = b
+	}
 	row.Children(func() {
-		switch {
-		case l.over:
-			ui.Icon(c, icon("upload")).FontSize(13).TextColor(t.Accent)
-			ui.Text(c, "松开以上传到「"+dirLabel(l.dir)+"」").TextColor(t.Accent).FontWeight(500).SingleLine()
-		case m != nil:
-			folderGlyph(c, p, 18)
-			a.makerField(c, t, l, false)
-			if m.busy {
-				ui.Spinner(c).Size(14, 14).Label("正在新建")
-			}
-		default:
-			if makerButton(c, t, "folder-plus", "新建文件夹").Grow(1).Clicked() {
-				a.newFolder(l)
-			}
-			ui.Box(c).Size(1, 14).Background(p.Hairline)
-			if makerButton(c, t, "upload", "上传文件").Grow(1).Clicked() {
-				a.pickUpload(l.dir)
-			}
+		if l.over {
+			ui.Row(c).Grow(1).Gap(8).AlignItems(ui.Center).Justify(ui.Center).TextColor(t.AccentText).Children(func() {
+				ui.Icon(c, icon("upload")).FontSize(14)
+				ui.Text(c, "松开以上传到「"+dirLabel(l.dir)+"」").FontWeight(600).SingleLine()
+			})
+			return
+		}
+		a.newFolderButton(c, t, l)
+		up := makerButton(c, t, "upload", "上传文件")
+		if up.Clicked() {
+			a.pickUpload(l.dir, up.Bounds())
 		}
 	})
 	return row
@@ -231,30 +292,37 @@ func (a *App) makerRow(c *ui.Context, t *ui.Theme, p *palette, l *listing) ui.El
 
 // makerTile is the maker as the grid's last tile.
 func (a *App) makerTile(c *ui.Context, t *ui.Theme, p *palette, l *listing, e ui.Element) {
-	m := a.creatingIn(l)
-	e.Padding(10).Gap(8).AlignItems(ui.Center).Justify(ui.Center).Radius(t.Radius).Label("新建")
-	makerFrame(e, t, l.over || m != nil)
+	e.Padding(10).Gap(8).AlignItems(ui.Center).Radius(t.Radius).Label("新建")
+	fill := t.Background.Mix(t.Accent, 0)
+	if l.over {
+		fill = t.Background.Mix(t.Accent, 0.16)
+	}
+	e.Background(e.AnimateColor("fill", fill, motionFade))
+	if b := e.Bounds(); b.W > 0 {
+		l.makerAt = b
+	}
 	e.Children(func() {
-		switch {
-		case l.over:
-			ui.Icon(c, icon("upload")).FontSize(28).TextColor(t.Accent)
-			ui.Text(c, "松开以上传").TextColor(t.Accent).FontWeight(500)
-		case m != nil:
-			folderGlyph(c, p, 72)
-			ui.Row(c).Width(tileNameWidth).Gap(6).AlignItems(ui.Center).Children(func() {
-				a.makerField(c, t, l, true)
-				if m.busy {
-					ui.Spinner(c).Size(14, 14).Label("正在新建")
-				}
+		box := ui.Box(c).Width(124).Height(112).Radius(12).Center().Background(p.Group)
+		box.Children(func() {
+			ic := "plus"
+			if l.over {
+				ic = "upload"
+			}
+			ui.Box(c).Size(44, 44).Radius(22).Center().Background(t.Accent).TextColor(t.AccentText).Children(func() {
+				ui.Icon(c, icon(ic)).FontSize(22)
 			})
-		default:
-			if makerButton(c, t, "folder-plus", "新建文件夹").Clicked() {
-				a.newFolder(l)
-			}
-			if makerButton(c, t, "upload", "上传文件").Clicked() {
-				a.pickUpload(l.dir)
-			}
+		})
+		if l.over {
+			ui.Text(c, "松开以上传").TextColor(t.Accent).FontWeight(600)
+			return
 		}
+		ui.Column(c).Gap(0).AlignItems(ui.Center).Children(func() {
+			a.newFolderButton(c, t, l)
+			up := makerButton(c, t, "upload", "上传文件")
+			if up.Clicked() {
+				a.pickUpload(l.dir, up.Bounds())
+			}
+		})
 	})
 }
 
@@ -266,6 +334,6 @@ func (a *App) emptyFolder(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 		})
 		ui.Text(c, "这里还空着").FontSize(15).FontWeight(600)
 		ui.Text(c, "新建一个文件夹，或把文件拖进窗口上传").TextColor(t.TextMuted).TextAlign(ui.Center).MaxWidth(360)
-		a.makerRow(c, t, p, l).Width(320).Margin(14, 0, 0)
+		a.makerRow(c, t, p, l, true).Width(320).Margin(14, 0, 0)
 	})
 }

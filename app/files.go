@@ -37,6 +37,13 @@ type listing struct {
 	sole     int64 // the file chosen alone in the last frame, else 0
 	refocus  bool  // the files take the focus back, from a name edited
 	over     bool  // files dragged over the window, which light the maker
+	// rowsShown are where the list's rows of the last frame showed, by
+	// file, and rowsBuilt those of this frame (glideRow).
+	rowsShown, rowsBuilt map[int64]float32
+	glides               map[int64]rowGlide
+	makerAt              ui.Rect // where the maker showed, in the window
+	draftAt              ui.Rect // where the folder being named showed
+	landing              string  // the path of the folder made, chosen once it lands
 
 	loads       int      // counts the reads that came back
 	ghosts      []string // the uploads it shows that it does not list yet

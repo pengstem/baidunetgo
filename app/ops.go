@@ -232,7 +232,7 @@ func (a *App) fileActions(c *ui.Context, l *listing) {
 		a.router.Push(filesRoute(path.Dir(l.dir)))
 	}
 	if c.Shortcut(ui.Cmd|ui.Shift, ui.KeyN) {
-		a.newFolder(l)
+		a.newFolder(l, l.makerAt)
 	}
 	if c.Shortcut(ui.Cmd, ui.KeyR) {
 		a.reload(l.dir)

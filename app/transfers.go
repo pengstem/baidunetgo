@@ -159,15 +159,19 @@ func (a *App) queueUploads(locals []string, dir string, names map[string]string)
 	})
 }
 
-// pickUpload asks for files to upload into dir.
-func (a *App) pickUpload(dir string) {
+// pickUpload asks for files to upload into dir, which come into it from
+// the box in the window that asked.
+func (a *App) pickUpload(dir string, from ui.Rect) {
 	win := a.win
 	go func() {
 		files, err := mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: win, Title: "选择要上传的文件", ButtonLabel: "上传", Multiple: true})
 		if err != nil || len(files) == 0 {
 			return
 		}
-		a.update(func() { a.upload(files, dir) })
+		a.update(func() {
+			a.upload(files, dir)
+			a.land(dir, files, from)
+		})
 	}()
 }
 

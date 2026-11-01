@@ -11,16 +11,13 @@ import (
 	"github.com/pengstem/baidunetgo/internal/baidu"
 )
 
-// The shaders, in shaders/: a row breaking into specks as it is deleted
-// and gathering from them as it uploads, and the drop zone's ring.
+// The shader, in shaders/: a row breaking into specks as it is deleted
+// and gathering from them as it uploads.
 var (
 	//go:embed shaders/specks.kage
 	specksSource string
-	//go:embed shaders/glow.kage
-	glowSource string
 
 	specks = shader.MustCompile(specksSource)
-	glow   = shader.MustCompile(glowSource)
 )
 
 // dissolveFor is how long a deleted row takes to break into specks and
@@ -140,39 +137,6 @@ func (a *App) moving() bool {
 // since returns how far now is into a span of d from start, from 0 to 1.
 func since(now, start time.Time, d time.Duration) float32 {
 	return float32(min(max(float64(now.Sub(start))/float64(d), 0), 1))
-}
-
-// dropGlow is the ring around the browser while files are dragged over it,
-// flaring for a moment as they are dropped.
-func (a *App) dropGlow(c *ui.Context, t *ui.Theme, over bool) {
-	now := c.Now()
-	burst := 1 - since(now, a.dropped, 700*time.Millisecond)
-	if !over && burst <= 0 {
-		return
-	}
-	ring := ui.Box(c).Key("dropglow").Absolute().Top(0).Left(0).Right(0).Bottom(0).PassThrough().
-		Transition(ui.ElementTransition{Animation: &motionFade, Enter: &ui.Motion{Opacity: 0}, Exit: &ui.Motion{Opacity: 0}})
-	if !a.gpu {
-		ring.Children(func() {
-			ui.Box(c).Absolute().Top(6).Left(8).Right(8).Bottom(8).Radius(10).Border(2, t.Accent).PassThrough()
-		})
-		return
-	}
-	ring.Draw(func(p *ui.Painter, r ui.Rect) {
-		// The flare as it paints, which frames that only paint move on.
-		burst := 1 - since(p.Now(), a.dropped, 700*time.Millisecond)
-		strength := float32(1)
-		if !over {
-			strength = burst // the flare fades the ring out
-		}
-		if strength <= 0 {
-			return
-		}
-		glow.Draw(p, r, shader.Options{Uniforms: map[string]any{
-			"Time": shaderClock(p.Now()), "Strength": strength, "Burst": burst * burst, "Pad": 7, "Radius": 10,
-		}})
-		p.AnimationFrameRate(effectFPS)
-	})
 }
 
 // smoothstep eases x from 0 at e0 to 1 at e1, as the shaders' does.

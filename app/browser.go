@@ -34,6 +34,9 @@ func (a *App) filesPage(c *ui.Context, t *ui.Theme, p *palette, dir string) {
 		l.sorted = a.order
 	}
 	a.settleMaker(l)
+	a.placeDraft(l)
+	a.followFlights(l, c.Now())
+	a.chooseLanded(l, c.Now())
 	// Files coming and going are not chosen.
 	for id := range l.sel.All() {
 		if id < 0 || a.dying[id] != nil {
@@ -51,7 +54,16 @@ func (a *App) filesPage(c *ui.Context, t *ui.Theme, p *palette, dir string) {
 	}
 	if dropped := page.DroppedFiles(); len(dropped) > 0 {
 		a.upload(dropped, dir)
-		a.dropped = c.Now()
+		// They come in from where they were let go, else from the maker,
+		// else from the middle of the page.
+		b := page.Bounds()
+		from := ui.Rect{X: b.X + b.W/2 - 1, Y: b.Y + b.H/2 - 1, W: 2, H: 2}
+		if x, y, ok := page.PointerPosition(); ok {
+			from = ui.Rect{X: b.X + x - 1, Y: b.Y + y - 1, W: 2, H: 2}
+		} else if l.makerAt.W > 0 {
+			from = l.makerAt
+		}
+		a.land(dir, dropped, from)
 	}
 	page.Children(func() {
 		switch {
@@ -70,7 +82,7 @@ func (a *App) filesPage(c *ui.Context, t *ui.Theme, p *palette, dir string) {
 			a.statusBar(c, t, p, l)
 		}
 		a.selectionBar(c, t, p, l, page.Bounds().W)
-		a.dropGlow(c, t, l.over)
+		a.flightCards(c, t, p, l, page.Bounds())
 	})
 	l.sole = 0
 	if files := l.chosen(); len(files) == 1 {
@@ -123,6 +135,11 @@ func (a *App) bindListState(l *listing) {
 func (a *App) fileList(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 	a.bindListState(l)
 	now := c.Now()
+	tops := a.rowTops(l, now)
+	l.rowsBuilt = map[int64]float32{}
+	if l.glides == nil {
+		l.glides = map[int64]rowGlide{}
+	}
 	a.listHeader(c, t, p)
 	list := ui.List(c, &l.list, len(l.files)+1).Grow(1).Padding(0, 10, 16)
 	outer, enter := c, false
@@ -139,7 +156,7 @@ func (a *App) fileList(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 		c := row.Context
 		if row.Index == len(l.files) {
 			ui.Column(c).Padding(6, 0, 0).Children(func() {
-				m := a.makerRow(c, t, p, l)
+				m := a.makerRow(c, t, p, l, false)
 				if in := entering(m, l, row.Index, now, rowStagger); in < 1 {
 					m.Opacity(in).Translate(0, (1-in)*10)
 				}
@@ -150,10 +167,18 @@ func (a *App) fileList(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 		r := ui.Row(c).Height(rowHeight).PaddingX(10).Gap(8).AlignItems(ui.Center).Radius(6).TextColor(t.Text)
 		muted := t.TextMuted
 		passing, gone := a.passing(r, f, t, now)
+		draft := f.FsID == draftID
+		glideRow(c, r, l, f.FsID, tops[f.FsID], now)
+		a.awaited(r, l, f, now)
+		if draft {
+			l.draftAt = r.Bounds()
+		}
 		switch {
 		case passing:
 			// Gone, the row closes up.
 			r.Height(rowHeight * (1 - smoothstep(0.7, 1, gone)))
+		case draft:
+			r.Background(t.Background.Mix(t.Accent, 0.08))
 		case row.Selected() && row.ListFocused():
 			// Chosen in the list with the focus: the accent, its text
 			// turned white, as AppKit's tables.
@@ -173,7 +198,9 @@ func (a *App) fileList(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 		}
 		r.Children(func() {
 			a.fileIcon(c, t, p, f, 18)
-			if a.renamingIn(l, f) {
+			if draft {
+				a.makerField(c, t, l, false)
+			} else if a.renamingIn(l, f) {
 				a.nameField(c, t, l, f, false)
 			} else {
 				a.clickName(l, f, wholeOnHover(c, ui.Text(c, f.Name).Grow(1).Shrink(1).SingleLine(), f.Name, 0))
@@ -185,15 +212,19 @@ func (a *App) fileList(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 			ui.Text(c, kindLabel(f)).Width(colType).TextColor(muted).SingleLine()
 			figure(c, size).Width(colSize).TextAlign(ui.End).TextColor(muted)
 			when := stampTime(f.Mtime, now)
+			if draft {
+				when = ""
+			}
 			if g := a.gathers[f.Path]; g != nil && f.FsID < 0 {
 				when = uploadLabel(g)
 			}
 			figure(c, when).Width(colTime).TextAlign(ui.End).TextColor(muted)
 		})
-		if !passing {
+		if !passing && !draft {
 			a.fileMenu(r, l, row.Index)
 		}
 	})
+	l.rowsShown = l.rowsBuilt
 	if l.refocus {
 		l.refocus = false
 		l.list.Focus(c)
@@ -253,7 +284,11 @@ func (a *App) listHeader(c *ui.Context, t *ui.Theme, p *palette) {
 func (a *App) statusBar(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 	ui.Row(c).Height(28).Shrink(0).PaddingX(20).Gap(14).AlignItems(ui.Center).BorderWidth(1, 0, 0, 0).BorderColor(p.Hairline).
 		FontSize(11).TextColor(t.TextMuted).Children(func() {
-		label := itoa(len(l.files)) + " 项"
+		n := len(l.files)
+		if l.index(draftID) >= 0 {
+			n--
+		}
+		label := itoa(n) + " 项"
 		if n := l.sel.Len(); n > 1 {
 			label = "已选 " + itoa(n) + " 项，共 " + label
 		}
@@ -279,6 +314,11 @@ func (a *App) fileGrid(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 	a.tileGrid(c, l, func(e ui.Element) { a.makerTile(c, t, p, l, e) }, func(i int, tile ui.Element) {
 		f := &l.files[i]
 		tile.Padding(10).Gap(8).AlignItems(ui.Center).Radius(t.Radius).TextColor(t.Text)
+		draft := f.FsID == draftID
+		a.awaited(tile, l, f, now)
+		if draft {
+			l.draftAt = tile.Bounds()
+		}
 		passing, _ := a.passing(tile, f, t, now)
 		fill := t.Background
 		switch {
@@ -321,7 +361,9 @@ func (a *App) fileGrid(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 					})
 				})
 			}
-			if a.renamingIn(l, f) {
+			if draft {
+				ui.Row(c).Width(tileNameWidth).Children(func() { a.makerField(c, t, l, true) })
+			} else if a.renamingIn(l, f) {
 				ui.Row(c).Width(tileNameWidth).Children(func() { a.nameField(c, t, l, f, true) })
 			} else {
 				shown := a.tileName(c, f.Name)
@@ -332,7 +374,7 @@ func (a *App) fileGrid(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 				a.clickName(l, f, name)
 			}
 		})
-		if !passing {
+		if !passing && !draft {
 			a.fileMenu(tile, l, i)
 		}
 	})
@@ -714,8 +756,8 @@ func (a *App) filesToolbar(c *ui.Context, t *ui.Theme, p *palette, dir string) {
 		if toolButton(c, t, p, "refresh-cw", "刷新").Clicked() {
 			a.reload(dir)
 		}
-		if pillOf(c, t, p, "upload", "上传", true, a.compact).Clicked() {
-			a.pickUpload(dir)
+		if up := pillOf(c, t, p, "upload", "上传", true, a.compact); up.Clicked() {
+			a.pickUpload(dir, up.Bounds())
 		}
 	})
 }

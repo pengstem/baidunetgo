@@ -133,6 +133,11 @@ var (
 	motionFade  = ui.Animation{Duration: 160 * time.Millisecond, Ease: easeStandard} // menus, tips, dialogs
 	motionPanel = ui.Animation{Duration: 180 * time.Millisecond, Ease: easeStandard} // panels, pages, shared elements
 
+	// motionLand brings a file into the room the rows make for it, after
+	// them: a folder made, a file dropped or picked. It is longer than the
+	// others, as the way can be the whole window.
+	motionLand = ui.Animation{Duration: 420 * time.Millisecond, Ease: easeStandard, Delay: 180 * time.Millisecond}
+
 	// navIconRun is how long a sidebar icon's gesture takes, delays
 	// included: the one motion over 180 ms, as it goes and comes back.
 	navIconRun = 360 * time.Millisecond

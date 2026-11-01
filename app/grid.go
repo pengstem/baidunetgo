@@ -126,7 +126,7 @@ func (a *App) tileGrid(c *ui.Context, l *listing, maker func(e ui.Element), tile
 				slot.Children(func() {
 					e := ui.Column(c).Grow(1).Role(ui.RoleListItem).Label(f.Name)
 					// Clicks in a name edited are the input's.
-					editing := a.renamingIn(l, f)
+					editing := a.renamingIn(l, f) || f.FsID == draftID
 					if e.Clicked() && !editing {
 						g.click(l, i, e.ClickModifiers())
 						grid.Focus()

@@ -58,23 +58,34 @@ func TestDownloadAndUploadPage(t *testing.T) {
 }
 
 // TestDropUploads drops a file from Finder on a folder's page, which
-// uploads it there.
+// uploads it there, its card staying where it was let go until its row
+// comes from it.
 func TestDropUploads(t *testing.T) {
 	a, tt, srv := signedIn(t)
 	a.router.Push(filesRoute("/照片"))
 	waitFor(t, tt, "IMG_2310.jpg")
 	local := filepath.Join(t.TempDir(), "拖进来.png")
 	os.WriteFile(local, []byte("png"), 0o644)
+	tt.Advance(time.Second) // the page done sliding in
 	if !tt.DropFiles(700, 400, local) {
 		t.Fatal("the page did not take the drop")
 	}
+	tt.Advance(16 * time.Millisecond)
+	save(t, tt, "drop-card")
+	arrived := false
 	deadline := time.Now().Add(5 * time.Second)
-	for srv.Data("/照片/拖进来.png") == nil {
+	for srv.Data("/照片/拖进来.png") == nil || !arrived {
+		fl := a.flights["/照片/拖进来.png"]
+		arrived = arrived || fl != nil && !fl.at.IsZero()
 		if time.Now().After(deadline) {
-			t.Fatalf("upload never arrived: %+v", a.transfers.tasks)
+			t.Fatalf("upload never arrived (row came from its card: %v): %+v", arrived, a.transfers.tasks)
 		}
 		time.Sleep(20 * time.Millisecond)
 		tt.Advance(50 * time.Millisecond)
+	}
+	settle(tt)
+	if len(a.flights) != 0 {
+		t.Errorf("the card stayed: %d", len(a.flights))
 	}
 }
 
