@@ -41,6 +41,18 @@ func waitFor(t *testing.T, tt *ui.Tester, text string) {
 	}
 }
 
+// rightClickRow targets the row's content, which owns its context menu.
+// RightClick(name) targets the list's outer accessibility row instead.
+func rightClickRow(t *testing.T, tt *ui.Tester, name string) {
+	t.Helper()
+	row, ok := tt.AccessByRole(ui.RoleListItem, name)
+	if !ok || row.Offscreen || row.Bounds.W <= 0 || row.Bounds.H <= 0 {
+		t.Fatalf("no visible file row %q", name)
+	}
+	r := row.Bounds
+	tt.RightClickAt(r.X+r.W/2, r.Y+r.H/2)
+}
+
 func TestBrowse(t *testing.T) {
 	a, tt, _ := signedIn(t)
 	if !tt.HasText("演示用户") {
@@ -133,9 +145,7 @@ func TestDragSelect(t *testing.T) {
 	if l.sel.Len() != 3 || !l.sel.Has(l.files[0].FsID) || !l.sel.Has(l.files[2].FsID) {
 		t.Fatalf("drag chose %d", l.sel.Len())
 	}
-	if err := tt.RightClick(l.files[4].Name); err != nil {
-		t.Fatal(err)
-	}
+	rightClickRow(t, tt, l.files[4].Name)
 	tt.Frame()
 	if l.sel.Len() != 1 || !l.sel.Has(l.files[4].FsID) || len(tt.Menu()) == 0 {
 		t.Errorf("right-click chose %d, menu %q", l.sel.Len(), tt.Menu())

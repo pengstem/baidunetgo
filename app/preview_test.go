@@ -381,9 +381,8 @@ func TestCopyImageFromList(t *testing.T) {
 	a, tt, _ := signedIn(t)
 	a.router.Push(filesRoute("/照片/京都"))
 	waitFor(t, tt, "kyoto-1.png")
-	if err := tt.RightClick("kyoto-1.png"); err != nil {
-		t.Fatal(err)
-	}
+	tt.Advance(time.Second)
+	rightClickRow(t, tt, "kyoto-1.png")
 	tt.Advance(100 * time.Millisecond)
 	if err := tt.ChooseMenuItem("复制图片"); err != nil {
 		t.Fatalf("%v: %q", err, tt.Menu())

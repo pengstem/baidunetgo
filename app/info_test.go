@@ -11,9 +11,7 @@ import (
 // which counts what the folder holds.
 func TestInfo(t *testing.T) {
 	a, tt, _ := signedIn(t)
-	if err := tt.RightClick("照片"); err != nil {
-		t.Fatal(err)
-	}
+	rightClickRow(t, tt, "照片")
 	if err := tt.ChooseMenuItem("显示详情"); err != nil {
 		t.Fatalf("%v; menu %q", err, tt.Menu())
 	}

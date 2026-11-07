@@ -92,8 +92,13 @@ func TestShareFromClipboard(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, tt, "海边日落.mp4")
-	tt.Click("选择「shared-1.png」")
-	tt.Click("shared-3.png")
+	tt.Advance(500 * time.Millisecond)
+	if err := tt.Click("选择「shared-1.png」"); err != nil {
+		t.Fatal(err)
+	}
+	if err := tt.Click("shared-3.png"); err != nil {
+		t.Fatal(err)
+	}
 	tt.Advance(800 * time.Millisecond)
 	save(t, tt, "share-clip-folder")
 	if err := tt.Click("保存所选 2 项"); err != nil {

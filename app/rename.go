@@ -87,15 +87,14 @@ func (l *listing) index(id int64) int {
 // name whether it was clicked would take them.
 func (a *App) clickName(l *listing, f *baidu.File, name ui.Element) {
 	id := f.FsID
-	name.HandleInput(func(ev ui.InputEvent) bool {
+	name.ObserveInput(func(ev ui.InputEvent) {
 		if ev.Kind != ui.InputPointerDown || ev.Button != 0 {
-			return false
+			return
 		}
 		a.slow = slowClick{}
 		if ev.Clicks == 1 && ev.Mods == 0 && l.sole == id && a.renaming == nil {
 			a.slow = slowClick{dir: l.dir, id: id}
 		}
-		return false
 	})
 }
 
