@@ -4,6 +4,12 @@
 
 <!-- 写在这里的内容会成为下一个版本的更新说明；留空则按提交记录自动生成。 -->
 
+## [0.8.4] - 2026-11-17
+
+### 改进
+
+- Delay the mpv window until media loads to avoid Wayland color-surface conflicts
+
 ## [0.8.3] - 2026-11-09
 
 ### 改进
