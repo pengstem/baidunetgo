@@ -62,6 +62,9 @@ func Args(url, title string, h http.Header) []string {
 		// can trigger a Wayland/Vulkan color-surface conflict when video starts.
 		"--force-window=yes",
 		"--keep-open=no",
+		// Re-read on seeks: cached seeks can lose already-played PGS subtitles
+		// with mpv/uosc. Forward buffering remains enabled.
+		"--demuxer-seekable-cache=no",
 		"--force-media-title=" + title,
 		"--title=" + title + " — BaiduNetGo",
 	}
