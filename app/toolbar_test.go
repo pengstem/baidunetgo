@@ -11,6 +11,18 @@ import (
 	"github.com/pengstem/baidunetgo/internal/fakepan"
 )
 
+func TestFindReplacesPreviousQuery(t *testing.T) {
+	a, tt, _ := signedIn(t)
+	for _, query := range []string{"照片", "京都"} {
+		tt.Key(ui.Cmd, ui.KeyF)
+		tt.Advance(200 * time.Millisecond)
+		tt.Type(query)
+		if a.query != query {
+			t.Fatalf("search query = %q, want %q", a.query, query)
+		}
+	}
+}
+
 // TestSortMenu sorts the grid from the title bar's menu.
 func TestSortMenu(t *testing.T) {
 	a, tt, _ := signedIn(t)

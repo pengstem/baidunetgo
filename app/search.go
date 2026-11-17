@@ -101,7 +101,7 @@ func (a *App) searchPage(c *ui.Context, t *ui.Theme, p *palette, q string) {
 					a.fileIcon(c, t, p, &f, 28)
 					ui.Column(c).Grow(1).Shrink(1).Gap(1).Children(func() {
 						wholeOnHover(c, ui.RichText(c, highlight(f.Name, q, t)...).SingleLine(), f.Name, 0)
-						wholeOnHover(c, ui.Text(c, path.Dir(f.Path)).FontSize(11).TextColor(t.TextMuted).SingleLine(), path.Dir(f.Path), 11)
+						wholeOnHover(c, ui.Text(c, path.Dir(f.Path)).FontSize(11).TextColor(t.TextMuted).SingleLine().TruncateStart(), path.Dir(f.Path), 11)
 					})
 					if !f.IsDir {
 						figure(c, humanSize(f.Size)).Width(90).TextAlign(ui.End).TextColor(t.TextMuted)
@@ -161,7 +161,7 @@ func (a *App) searchField(c *ui.Context, t *ui.Theme, p *palette) {
 	var in ui.Element
 	f.Children(func() {
 		ui.Icon(c, icon("search")).FontSize(13).TextColor(t.TextMuted)
-		in = ui.TextInputBase(c, &a.query).Label("搜索网盘").Placeholder("搜索").Grow(1).MinWidth(0)
+		in = ui.TextInputBase(c, &a.query).Bind(&a.searchInput).Label("搜索网盘").Placeholder("搜索").Grow(1).MinWidth(0)
 		if a.query != "" {
 			x := ui.ButtonBase(c).Label("清除").Size(16, 16).Radius(8).Center().Background(t.TextMuted.Alpha(0.5)).TextColor(t.Background)
 			x.Children(func() { ui.Icon(c, icon("x")).FontSize(10) })
@@ -191,9 +191,9 @@ func (a *App) searchField(c *ui.Context, t *ui.Theme, p *palette) {
 	if in.Focused() && in.Shortcut(0, ui.KeyEscape) {
 		a.query = ""
 	}
-	// Cmd-F puts the cursor in it.
+	// Cmd-F selects the previous query so typing replaces it.
 	if a.finding {
-		in.Focus()
+		a.searchInput.SelectAll(c)
 		a.finding = false
 	}
 	if c.Shortcut(ui.Cmd, ui.KeyF) {

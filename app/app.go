@@ -39,6 +39,7 @@ type App struct {
 	order       baidu.Order
 	gridView    bool
 	finding     bool              // Cmd-F asks for the search field
+	searchInput ui.Handle         // focuses and selects the previous search query
 	askingQuit  bool              // the question whether to quit is showing
 	quitOK      atomic.Bool       // the user said to quit while transfers go on
 	tileNames   map[string]string // names laid out for grid tiles (tileName)

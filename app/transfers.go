@@ -270,6 +270,7 @@ func (a *App) transfersPage(c *ui.Context, t *ui.Theme, p *palette) {
 		return
 	}
 	x.list.Key = func(i int) any { return shown[i].ID }
+	x.list.MoveAnimation = &motionPanel
 	ui.Column(c).Grow(1).Children(func() {
 		if x.tab == 0 {
 			a.speedCard(c, t, p)
