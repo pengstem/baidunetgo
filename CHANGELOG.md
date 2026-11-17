@@ -4,6 +4,13 @@
 
 <!-- 写在这里的内容会成为下一个版本的更新说明；留空则按提交记录自动生成。 -->
 
+## [0.9.0] - 2026-11-17
+
+### 改进
+
+- Re-read streamed media on seeks to keep PGS subtitles visible during replay
+- Use MyGo native menus, list motion and batched particles to simplify rendering
+
 ## [0.8.5] - 2026-11-17
 
 ### 改进
