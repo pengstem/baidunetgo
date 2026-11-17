@@ -58,7 +58,9 @@ func Find(custom string) (string, error) {
 // titled title.
 func Args(url, title string, h http.Header) []string {
 	args := []string{
-		"--force-window=immediate",
+		// Wait for the media before creating the window: an immediate window
+		// can trigger a Wayland/Vulkan color-surface conflict when video starts.
+		"--force-window=yes",
 		"--keep-open=no",
 		"--force-media-title=" + title,
 		"--title=" + title + " — BaiduNetGo",
