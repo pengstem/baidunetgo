@@ -215,6 +215,7 @@ func (a *App) View(c *ui.Context) {
 	if a.moving() {
 		c.Invalidate()
 	}
+	c.SetMenuPresentation(ui.PopoverMenus)
 	t, p := applyTheme(c)
 	switch a.phase {
 	case phaseBooting:

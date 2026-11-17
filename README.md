@@ -37,7 +37,7 @@ BAIDUNETGO_FAKE=1 go run .           # 连接内置的假网盘，不需要账�
 BAIDUNETGO_FAKE=1 MYGO_AUTOMATION=/tmp/baidunetgo.sock go run -tags e2e .   # 用 socket 驱动真实窗口
 go test ./...
 go vet ./... && gofmt -l .
-go tool mygo build                   # 打包当前平台到 build/
+GOFLAGS=-tags=mygo_nowebview go tool mygo build   # 纯原生界面打包，Windows 无需 WebView2
 go tool mygo build -sign "BaiduNetGo Dev"   # macOS：用固定的自签名证书签名，钥匙串的“始终允许”不会每次重新询问
 ```
 

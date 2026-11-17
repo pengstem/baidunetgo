@@ -3,6 +3,7 @@ package app
 import (
 	_ "embed"
 	"hash/fnv"
+	"math"
 	"time"
 
 	"github.com/egoist/mygo/ui"
@@ -59,16 +60,88 @@ func (fx specksFx) reach() ([]float32, ui.Point) {
 func (fx specksFx) EffectMargin() ui.Point { _, m := fx.reach(); return m }
 
 func (fx specksFx) PaintEffect(p *ui.Painter, box ui.Rect, content *ui.Bitmap, inset ui.Point) {
-	now := p.Now()
-	reach, margin := fx.reach()
-	g := 0
-	if fx.gathering {
-		g = 1
+	if content == nil || box.W <= 0 || box.H <= 0 {
+		return
 	}
-	specks.Effect(shader.Options{MaxSampleOffset: margin, Uniforms: map[string]any{
-		"Progress": fx.progress(now), "Gather": g, "Time": shaderClock(now), "Seed": fx.seed % 9973, "Tint": fx.tint, "Reach": reach,
-	}}).PaintEffect(p, box, content, inset)
+	now := p.Now()
+	progress, clock := fx.progress(now), shaderClock(now)
+	scale := p.Scale()
+	options := shader.Options{
+		Images:   [4]*ui.Bitmap{content},
+		Uniforms: map[string]any{"Tint": fx.tint, "Inset": [2]float32{inset.X, inset.Y}, "SourceScale": scale},
+	}
+	// One quad per source cell: no neighborhood search for every output
+	// pixel. Flush bounded batches for unusually large previews or tiles.
+	const cell = float32(3)
+	cols, rows := int(math.Ceil(float64(box.W/cell))), int(math.Ceil(float64(box.H/cell)))
+	capacity := min(cols*rows, shader.MaxInstances)
+	rects := make([]ui.Rect, 0, capacity)
+	data := make([]float32, 0, capacity*5)
+	flush := func() {
+		specks.DrawInstances(p, shader.Instances{Rects: rects, Data: data, Stride: 5}, options)
+		rects, data = rects[:0], data[:0]
+	}
+	for y := 0; y < rows; y++ {
+		for x := 0; x < cols; x++ {
+			r := speckRandom(uint32(x), uint32(y), fx.seed%9973)
+			cx, cy := (float32(x)+0.5)*cell, (float32(y)+0.5)*cell
+			along := cx / box.W
+			if fx.gathering {
+				along = 1 - along
+			}
+			t := min(max((progress-0.45*along-0.15*r[0])/0.4, 0), 1)
+			if !fx.gathering && t >= 1 {
+				continue
+			}
+			k := 1 - 0.45*t
+			dx, dy := speckOffset(t, clock, r, fx.gathering)
+			fade := 1 - smoothstep(0.45, 1, t)
+			if fx.gathering {
+				fade = 1 - 0.45*smoothstep(0.15, 1, t)
+			}
+			// Clip the final cells to the element, keeping their sampling
+			// aligned even when its size is not a multiple of three.
+			sx, sy := float32(x)*cell, float32(y)*cell
+			w, h := min(cell, box.W-sx), min(cell, box.H-sy)
+			rects = append(rects, ui.Rect{
+				X: box.X + cx + dx - cell*k/2,
+				Y: box.Y + cy + dy - cell*k/2,
+				W: w * k, H: h * k,
+			})
+			data = append(data, sx, sy, 1/k, fade, smoothstep(0, 0.35, t))
+			if len(rects) == shader.MaxInstances {
+				flush()
+			}
+		}
+	}
+	flush()
 	p.AnimationFrameRate(effectFPS)
+}
+
+// Match the old shader's hash so each file keeps its particle pattern.
+func speckRandom(x, y, seed uint32) [4]float32 {
+	s := (x*1973+y*9277+seed*26699)*747796405 + 2891336453
+	w := ((s >> ((s >> 28) + 4)) ^ s) * 277803737
+	h := (w >> 22) ^ w
+	return [4]float32{
+		(float32(h&255) + 0.5) / 256,
+		(float32((h>>8)&255) + 0.5) / 256,
+		(float32((h>>16)&255) + 0.5) / 256,
+		(float32(h>>24) + 0.5) / 256,
+	}
+}
+
+func speckOffset(t, clock float32, r [4]float32, gathering bool) (float32, float32) {
+	if gathering {
+		a, dist := float64(r[1])*2*math.Pi, float64(4+14*r[2])
+		k := smoothstep(0, 1, t)
+		dx := math.Cos(a)*dist + math.Sin(float64(clock)*1.6+float64(r[3])*2*math.Pi)*2.5
+		dy := math.Sin(a)*dist*0.4 + math.Cos(float64(clock)*1.2+float64(r[0])*2*math.Pi)*2.5
+		return float32(dx) * k, float32(dy) * k
+	}
+	a, dist := float64(-0.6+(r[1]-0.5)*0.9), 10+16*r[2]
+	e := t * (0.35 + 0.65*t)
+	return float32(math.Cos(a)) * dist * e, float32(math.Sin(a))*dist*e - 4*t*t
 }
 
 // seedOf picks a file's specks by its path, which an upload's row and the

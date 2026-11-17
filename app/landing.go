@@ -195,56 +195,6 @@ func (a *App) flightCards(c *ui.Context, t *ui.Theme, p *palette, l *listing, pa
 
 func lerp(a, b, k float32) float32 { return a + (b-a)*k }
 
-// rowTops returns where each row of l starts in its list, the rows closing
-// up as they leave counted as they show.
-func (a *App) rowTops(l *listing, now time.Time) map[int64]float32 {
-	tops := make(map[int64]float32, len(l.files))
-	y := float32(0)
-	for _, f := range l.files {
-		tops[f.FsID] = y
-		h := float32(rowHeight)
-		if d := a.dying[f.FsID]; d != nil && !d.at.IsZero() {
-			h *= 1 - smoothstep(0.7, 1, since(now, d.at, dissolveFor))
-		} else if g := a.gathers[f.Path]; g != nil && g.failed {
-			h *= 1 - smoothstep(0.7, 1, since(now, g.ended, dissolveFor))
-		}
-		y += h
-	}
-	return tops
-}
-
-// rowGlide is a row moving to its place from by DIPs away, from at.
-type rowGlide struct {
-	from float32
-	at   time.Time
-}
-
-// glideRow moves row r of file id from where it showed in the frame
-// before to its place at top, when another row coming or going moved it,
-// making room for it or closing up after it: rows closing up as one
-// dissolves move with the layout. The row keeps no animation state of its
-// own, which would take its name's clicks (clickName), so the listing
-// holds the glides.
-func glideRow(c *ui.Context, r ui.Element, l *listing, id int64, top float32, now time.Time) {
-	g, gliding := l.glides[id]
-	dy := float32(0)
-	if gliding {
-		k := since(now, g.at, motionPanel.Duration)
-		if dy = g.from * (1 - easeStandard(k)); k >= 1 {
-			delete(l.glides, id)
-		}
-	}
-	if was, ok := l.rowsShown[id]; ok && abs32(was-top-dy) > rowHeight/2 {
-		dy = was - top
-		l.glides[id] = rowGlide{from: dy, at: now}
-	}
-	if dy != 0 {
-		r.Translate(0, dy)
-		c.Invalidate()
-	}
-	l.rowsBuilt[id] = top + dy
-}
-
 func abs32(v float32) float32 {
 	if v < 0 {
 		return -v

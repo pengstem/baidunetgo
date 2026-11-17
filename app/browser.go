@@ -129,17 +129,13 @@ func (a *App) bindListState(l *listing) {
 	l.list.Header = func(i int) bool { return i == len(files) }
 	l.list.Selected = &l.selected
 	l.list.Selection = &l.sel
+	l.list.MoveAnimation = &motionPanel
 	l.list.DragSelect = true // a drag over the rows chooses them, as in Finder
 }
 
 func (a *App) fileList(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 	a.bindListState(l)
 	now := c.Now()
-	tops := a.rowTops(l, now)
-	l.rowsBuilt = map[int64]float32{}
-	if l.glides == nil {
-		l.glides = map[int64]rowGlide{}
-	}
 	a.listHeader(c, t, p)
 	list := ui.List(c, &l.list, len(l.files)+1).Grow(1).Padding(0, 10, 16)
 	outer, enter := c, false
@@ -168,7 +164,6 @@ func (a *App) fileList(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 		muted := t.TextMuted
 		passing, gone := a.passing(r, f, t, now)
 		draft := f.FsID == draftID
-		glideRow(c, r, l, f.FsID, tops[f.FsID], now)
 		a.awaited(r, l, f, now)
 		if draft {
 			l.draftAt = r.Bounds()
@@ -224,7 +219,6 @@ func (a *App) fileList(c *ui.Context, t *ui.Theme, p *palette, l *listing) {
 			a.fileMenu(r, l, row.Index)
 		}
 	})
-	l.rowsShown = l.rowsBuilt
 	if l.refocus {
 		l.refocus = false
 		l.list.Focus(c)
@@ -522,7 +516,7 @@ func kindLabel(f *baidu.File) string {
 // chosen when the row is one of them, else on the row's.
 func (a *App) fileMenu(e ui.Element, l *listing, i int) {
 	f := l.files[i]
-	e.ContextMenu(func(m *ui.Menu) {
+	contextMenu(e, func(m *ui.Menu) {
 		files := []baidu.File{f}
 		if l.sel.Has(f.FsID) {
 			files = l.chosen()
@@ -657,7 +651,7 @@ func (a *App) foldedCrumbs(c *ui.Context, t *ui.Theme, labels []string, from int
 		b.TextColor(t.Text)
 	}
 	b.Children(func() { ui.Text(c, "…") })
-	b.Menu(func(m *ui.Menu) {
+	menuButton(b, func(m *ui.Menu) {
 		for i := from - 1; i >= first; i-- {
 			if m.Item(labels[i]).Chosen() {
 				a.router.Push(filesRoute(target(i)))
@@ -768,7 +762,7 @@ var sortOrders = []struct{ by, label string }{{"name", "名称"}, {"size", "大�
 // sortMenu is the grid's button choosing the order, which the list
 // chooses by its columns: what to sort by, then which way.
 func (a *App) sortMenu(c *ui.Context, t *ui.Theme, p *palette) {
-	toolButton(c, t, p, "arrow-down-wide-narrow", "排序方式").Menu(func(m *ui.Menu) {
+	menuButton(toolButton(c, t, p, "arrow-down-wide-narrow", "排序方式"), func(m *ui.Menu) {
 		for _, o := range sortOrders {
 			if m.Item(o.label).Radio(a.order.By == o.by).Chosen() && a.order.By != o.by {
 				a.order = baidu.Order{By: o.by, Desc: o.by != "name"}

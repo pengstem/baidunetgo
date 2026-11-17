@@ -111,7 +111,7 @@ func (a *App) searchPage(c *ui.Context, t *ui.Theme, p *palette, q string) {
 				if row.DoubleClicked() {
 					a.open(f)
 				}
-				row.ContextMenu(func(m *ui.Menu) {
+				contextMenu(row, func(m *ui.Menu) {
 					if m.Item("打开").Chosen() {
 						a.open(f)
 					}

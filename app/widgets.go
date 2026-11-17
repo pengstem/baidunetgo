@@ -178,7 +178,7 @@ func popUp(c *ui.Context, t *ui.Theme, p *palette, chosen *int, labels, icons []
 		}
 		ui.Icon(c, icon("chevrons-up-down")).FontSize(11).TextColor(t.TextMuted)
 	})
-	b.Menu(func(m *ui.Menu) {
+	menuButton(b, func(m *ui.Menu) {
 		for i, l := range labels {
 			if m.Item(l).Radio(i == *chosen).Chosen() {
 				*chosen = i

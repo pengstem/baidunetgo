@@ -115,6 +115,8 @@ jobs:
         if: matrix.name == 'Windows'
         run: sudo apt-get update && sudo apt-get install -y nsis
       - name: Build
+        env:
+          GOFLAGS: -tags=mygo_nowebview
         run: go tool mygo build -platform "${{ matrix.platform }}"
       - name: Upload to the release
         env:

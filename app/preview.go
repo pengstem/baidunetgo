@@ -691,7 +691,7 @@ func (a *App) imageViewer(c *ui.Context, t *ui.Theme, p *palette, pv *previewSta
 
 // imageMenu gives the picture its context menu.
 func (a *App) imageMenu(img ui.Element, pv *previewState) {
-	img.ContextMenu(func(m *ui.Menu) {
+	contextMenu(img, func(m *ui.Menu) {
 		if m.Item("复制图片").Shortcut(ui.Cmd, ui.KeyC).Chosen() {
 			a.copyImage(pv.file, pv.data)
 		}
